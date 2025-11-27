@@ -570,43 +570,6 @@ function startVisualizer() {
         function stopVisualizer() {
     visualizerManager.stop();
 }
-    // ========== DOWNLOAD SYSTEM INITIALIZATION ==========
-let urlProcessor = null;
-let downloadManager = null;
-let downloadUI = null;
-
-// Initialize download system
-if (typeof URLProcessor !== 'undefined' && 
-    typeof DownloadManager !== 'undefined' && 
-    typeof DownloadUI !== 'undefined') {
-    
-    urlProcessor = new URLProcessor(debugLog);
-    downloadManager = new DownloadManager(urlProcessor, debugLog);
-    downloadUI = new DownloadUI(downloadManager, debugLog);
-    
-    debugLog('✅ Download system initialized', 'success');
-    
-    // Add button handler
-    const downloadButton = document.getElementById('download-music-button');
-    if (downloadButton) {
-        downloadButton.onclick = () => {
-            downloadUI.showDownloadModal();
-        };
-    }
-    
-    // Keyboard shortcut: Ctrl+D to open download modal
-    document.addEventListener('keydown', (e) => {
-        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-        
-        if (e.ctrlKey && e.key === 'd') {
-            e.preventDefault();
-            downloadUI.showDownloadModal();
-        }
-    });
-} else {
-    debugLog('⚠️ Download system modules not loaded', 'warning');
-}
-// ========== END DOWNLOAD SYSTEM ==========
         
         // --- Equalizer Functions ---
         function setupEqualizerControls() {
