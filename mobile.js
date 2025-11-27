@@ -798,4 +798,51 @@ window.addEventListener('appinstalled', () => {
     console.log('✅ App installed successfully');
 });
 
+// ========== ANDROID STATUS BAR HIDING ==========
+function setupAndroidFullscreen() {
+    if (!isMobile || !isAndroid) return;
+    
+    const player = document.getElementById('audio-player');
+    
+    // Request fullscreen when play starts
+    player.addEventListener('play', async () => {
+        try {
+            // Try to enter fullscreen on Android
+            if (document.documentElement.requestFullscreen) {
+                await document.documentElement.requestFullscreen();
+                console.log('✅ Fullscreen mode enabled (status bar hidden)');
+            } else if (document.documentElement.webkitRequestFullscreen) {
+                await document.documentElement.webkitRequestFullscreen();
+                console.log('✅ Fullscreen mode enabled (webkit)');
+            } else if (screen.orientation && screen.orientation.lock) {
+                // Alternative: lock orientation to hide some UI
+                await screen.orientation.lock('portrait-primary');
+                console.log('✅ Orientation locked');
+            }
+        } catch (err) {
+            console.log('Fullscreen request failed (user may need to tap fullscreen icon):', err);
+        }
+    });
+    
+    // Exit fullscreen on pause
+    player.addEventListener('pause', async () => {
+        try {
+            if (document.fullscreenElement) {
+                await document.exitFullscreen();
+                console.log('Exited fullscreen');
+            }
+        } catch (err) {
+            console.log('Exit fullscreen failed:', err);
+        }
+    });
+    
+    console.log('✅ Android fullscreen handler initialized');
+}
+
+// Initialize when DOM is ready
+if (isAndroid) {
+    document.addEventListener('DOMContentLoaded', setupAndroidFullscreen);
+}
+// ========== END ANDROID STATUS BAR HIDING ==========
+
 console.log('✅ mobile.js loaded (ENHANCED VERSION)');
