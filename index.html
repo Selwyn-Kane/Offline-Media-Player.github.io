@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+   
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ultimate Offline Playlist Player</title>
+     <!-- ADD THESE LINES TO YOUR <head> -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Music Player">
+<meta name="theme-color" content="#dc3545">
+<link rel="manifest" href="manifest.json">
+    <!-- Platform detection (must load before other scripts) -->
+ <script src="chromeOS-detector.js"></script>
+ <script src="config-constants.js"></script>
+    <!-- DESKTOP BROWSER ICONS - ADD TO <head> -->
+<link rel="icon" type="image/png" sizes="32x32" href="icon-192.png">
+<link rel="icon" type="image/png" sizes="16x16" href="icon-192.png">
+<link rel="shortcut icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+    
+    <!-- Link to external CSS -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="drop-zone">DROP FILES TO LOAD</div>
+    <h1>🎵 Ultimate Local Music Player</h1>
+    <div id="mode-indicator"></div>
+    
+    <div id="metadata-container">
+        <button class="sticky-close" style="display: none;">✕</button>
+        <div id="cover-art-container">
+            <img id="cover-art" alt="Album Art">
+            <div id="cover-placeholder">🎵</div>
+        </div>
+        <div id="info-details">
+            <div class="label">Now Playing</div>
+            <div class="value" id="track-title">No track loaded</div>
+            <div class="label">Artist</div>
+            <div class="value" id="track-artist">--</div>
+            <div class="label">Album</div>
+            <div class="value" id="track-album">--</div>
+        </div>
+    </div>
+    
+    <div id="playlist-status">Load music files to begin</div>
+
+    <div id="controls"> 
+        <button id="load-button">📂 Load Music & Lyrics</button>
+        <button id="folder-button">📁 Select Music Folder</button>
+        <button id="clear-folder-button" style="display: none;">🗑️ Forget Folder</button>
+        <label style="display: none; color: #fff; font-size: 14px; margin-left: 10px;" id="auto-reload-label">
+        <input type="checkbox" id="auto-reload-check" checked>
+        <!--Auto-reload folder-->
+        </label>
+        <button id="prev-button" disabled>⏮️ Previous</button>
+        <button id="next-button" disabled>⏭️ Next</button>
+        <button id="shuffle-button" disabled>🔀 Shuffle</button>
+        <button id="loop-button" disabled>🔁 Loop Off</button>
+        <button id="debug-toggle">🐛 Debug</button>
+        <button id="compact-toggle">📄 Full View</button>
+        <button id="pip-toggle">📺 Float</button>
+        <button id="sticky-toggle">📌 Sticky Off</button>
+        <button id="fullscreen-viz-toggle">🌌 Fullscreen Visualizer</button>
+        <button id="download-music-button">🌐 Download Music</button>
+        <button id="custom-bg-button">🎨 Background</button>
+    </div>
+
+    <div id="volume-control">
+        <span id="volume-icon">🔊</span>
+        <input type="range" id="volume-slider" min="0" max="1" step="0.01" value="1">
+        <span id="volume-percentage">100%</span>
+    </div>
+
+    <div id="equalizer-control">
+        <div class="eq-header">
+            <span class="eq-title">🎛️ Equalizer</span>
+            <select id="eq-preset-select" class="eq-preset-dropdown">
+            <option value="">Select Preset...</option>
+            </select>
+            <button id="eq-reset" class="eq-reset-btn">Reset</button>
+            <button id="eq-reset" class="eq-reset-btn">Reset</button>
+        </div>
+        <div class="eq-bands">
+            <div class="eq-band">
+                <label class="eq-label">Bass</label>
+                <input type="range" id="eq-bass" class="eq-slider" min="-12" max="12" step="0.5" value="0" orient="vertical">
+                <span class="eq-value" id="bass-value">0 dB</span>
+            </div>
+            <div class="eq-band">
+                <label class="eq-label">Mid</label>
+                <input type="range" id="eq-mid" class="eq-slider" min="-12" max="12" step="0.5" value="0" orient="vertical">
+                <span class="eq-value" id="mid-value">0 dB</span>
+            </div>
+            <div class="eq-band">
+                <label class="eq-label">Treble</label>
+                <input type="range" id="eq-treble" class="eq-slider" min="-12" max="12" step="0.5" value="0" orient="vertical">
+                <span class="eq-value" id="treble-value">0 dB</span>
+            </div>
+        </div>
+    </div>
+    
+    <div id="custom-progress-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div id="time-display">
+        <span id="current-time">0:00</span>
+        <span id="duration">0:00</span>
+    </div>
+
+    <div id="lyrics-display">
+        <button id="export-lyrics-button" disabled>📥 Export</button>
+        <div class="lyric-line">Lyrics will appear here when a track is loaded.</div>
+    </div>
+
+    <div id="player-wrapper">
+        <canvas id="visualizer"></canvas>
+        <video id="audio-player" preload="metadata" crossorigin="anonymous"></video> 
+    </div>
+    
+    <div id="playlist-container">
+    <div id="playlist-header">
+        <h2>📋 Playlist</h2>
+        <button id="jump-to-current" disabled>🎯 Current</button>
+        <button id="clear-playlist" disabled>🗑️ Clear</button>
+    </div>
+    <input type="text" id="playlist-search" placeholder="🔍 Search playlist..." style="display: none;">
+    <div id="playlist-items">
+        <div class="empty-playlist">No tracks loaded yet. Click "Load Music & Lyrics" to get started!</div>
+    </div>
+</div>
+    
+    <div id="debug-panel"></div>
+
+    <video id="pip-video" muted playsinline style="display:none;"></video>
+
+    <!-- Fullscreen Visualizer Overlay -->
+<div id="fullscreen-visualizer" class="fullscreen-viz-hidden">
+    <div class="fullscreen-viz-controls">
+        <button id="viz-mode-btn" class="viz-control-btn">🎨 Mode: Bars</button>
+        <button id="viz-prev-btn" class="viz-control-btn">◀ Previous</button>
+        <button id="viz-play-pause-btn" class="viz-control-btn">⏸ Pause</button>
+        <button id="viz-next-btn" class="viz-control-btn">▶ Next</button>
+        <button id="viz-close-btn" class="viz-control-btn">✕ Close (ESC)</button>
+    </div>
+    <canvas id="fullscreen-viz-canvas"></canvas>
+    <div class="fullscreen-viz-info">
+        <div class="fullscreen-viz-title">No track loaded</div>
+        <div class="fullscreen-viz-artist">--</div>
+        <div class="fullscreen-viz-time">
+            <span id="viz-current-time">0:00</span> / <span id="viz-duration">0:00</span>
+        </div>
+    </div>
+</div>
+
+    <!-- Link to external JavaScript -->
+    <script src="performance-manager.js"></script>
+    <script src="audio-presets-manager.js"></script>
+    <script src="visualizer-manager.js"></script>
+    <script src="metadata-parser.js"></script>
+    <script src="vtt-parser.js"></script>
+    <script src="error-recovery.js"></script>
+    <script src="metadata-editor.js"></script>
+    <!-- Download system scripts -->
+    <script src="url-processor.js"></script>
+    <script src="download-manager.js"></script>
+    <!-- Spotify and YouTube search -->
+    <script src="spotify-playlist-parser.js"></script>
+    <script src="youtube-search.js"></script>
+    <script src="download-ui.js"></script>
+    <script src="script.js"></script>
+
+ <!-- ADD THIS RIGHT BEFORE </body> -->
+<script src="mobile.js"></script>
+<script src="sw-init.js"></script>
+<script src="custom-background.js"></script>
+</body>
+</html>
