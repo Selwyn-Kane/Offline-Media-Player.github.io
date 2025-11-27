@@ -2,52 +2,41 @@
   "name": "Ultimate Music Player",
   "short_name": "Music Player",
   "description": "Offline music player with lyrics and visualization",
-  "start_url": "/",
+  "start_url": "/index.html",
   "scope": "/",
-  "display": "fullscreen",
+  "display": "standalone",
   "orientation": "portrait-primary",
   "theme_color": "#000000",
   "background_color": "#000000",
-  "screenshots": [
-    {
-      "src": "icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png"
-    },
-    {
-      "src": "icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png"
-    }
-  ],
   "icons": [
     {
       "src": "icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any"
+      "purpose": "any maskable"
     },
     {
       "src": "icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any"
+      "purpose": "any maskable"
     }
   ],
-  "categories": ["music", "multimedia"]
-}
-
-{
-  "name": "Ultimate Music Player",
-  "short_name": "Music Player",
-  "start_url": "/",
-  "display": "standalone",
+  "screenshots": [
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "form_factor": "narrow"
+    }
+  ],
+  "categories": ["music", "entertainment"],
   "shortcuts": [
     {
-      "name": "Now Playing Widget",
-      "short_name": "Widget",
-      "description": "View now playing with controls",
-      "url": "/widget-now-playing.html",
+      "name": "Play Music",
+      "short_name": "Play",
+      "description": "Quick play",
+      "url": "/index.html?action=play",
       "icons": [
         {
           "src": "icon-192.png",
@@ -55,5 +44,70 @@
         }
       ]
     }
-  ]
+  ],
+  "widgets": [
+    {
+      "name": "Now Playing - Minimal",
+      "short_name": "Controls",
+      "description": "Playback controls only",
+      "tag": "minimal-widget",
+      "template": "widget-minimal.html",
+      "ms_ac_template": "widget-minimal-ac.json",
+      "auth": false,
+      "update": 1000,
+      "type": "application/vnd.microsoft.card.adaptive",
+      "screenshots": [
+        {
+          "src": "widget-minimal-screenshot.png",
+          "sizes": "512x512",
+          "label": "Minimal widget with playback controls"
+        }
+      ],
+      "icons": [
+        {
+          "src": "icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Now Playing - Full",
+      "short_name": "Now Playing",
+      "description": "Full track info with controls",
+      "tag": "full-widget",
+      "template": "widget-full.html",
+      "ms_ac_template": "widget-full-ac.json",
+      "auth": false,
+      "update": 1000,
+      "type": "application/vnd.microsoft.card.adaptive",
+      "screenshots": [
+        {
+          "src": "widget-full-screenshot.png",
+          "sizes": "512x512",
+          "label": "Full widget with album art and metadata"
+        }
+      ],
+      "icons": [
+        {
+          "src": "icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
+  ],
+  "prefer_related_applications": false,
+  "related_applications": [],
+  "share_target": {
+    "action": "/share-audio",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "files": [
+        {
+          "name": "audio",
+          "accept": ["audio/*", ".mp3", ".wav", ".ogg", ".m4a", ".flac"]
+        }
+      ]
+    }
+  }
 }
