@@ -1,25 +1,17 @@
-/* Service Worker - Enhanced for Android Widgets */
+/* Service Worker - Enhanced for PWA on GitHub Pages */
 
-const CACHE_NAME = 'music-player-v2';
+const CACHE_NAME = 'music-player-v3'; // Increment version to force cache update
 
-// Detect base path for GitHub Pages
-const isGitHubPages = self.location.hostname.includes('github.io');
-const BASE_PATH = isGitHubPages 
-  ? '/' + self.location.pathname.split('/')[1]  // Gets /repo-name
-  : '';
-
-console.log('[SW] Base path:', BASE_PATH);
-
+// Simple URLs to cache (relative paths work on both local and GH Pages)
 const urlsToCache = [
-  `${BASE_PATH}/`,
-  `${BASE_PATH}/index.html`,
-  `${BASE_PATH}/style.css`,
-  `${BASE_PATH}/script.js`,
-  `${BASE_PATH}/mobile.js`,
-  `${BASE_PATH}/widget-minimal.html`,
-  `${BASE_PATH}/widget-full.html`,
-  `${BASE_PATH}/widget-minimal-data.json`,
-  `${BASE_PATH}/widget-full-data.json`
+  './',
+  './index.html',
+  './style.css',
+  './script.js',
+  './mobile.js',
+  './gh-pages-config.js',
+  './sw-init.js',
+  './service-worker.js'
 ];
 
 let currentState = {
@@ -40,60 +32,82 @@ self.addEventListener('install', (event) => {
   console.log('[SW] Installing...');
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(urlsToCache))
-      .then(() => self.skipWaiting())
+      .then((cache) => {
+        console.log('[SW] Caching app files');
+        return cache.addAll(urlsToCache).catch(err => {
+          console.warn('[SW] Some files failed to cache:', err);
+          // Don't fail the entire install if some files don't cache
+          return Promise.resolve();
+        });
+      })
+      .then(() => {
+        console.log('[SW] Skip waiting');
+        return self.skipWaiting();
+      })
   );
 });
 
 // Activate
 self.addEventListener('activate', (event) => {
   console.log('[SW] Activating...');
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    caches.keys().then((cacheNames) => {
+      return Promise.all(
+        cacheNames.map((cacheName) => {
+          if (cacheName !== CACHE_NAME) {
+            console.log('[SW] Deleting old cache:', cacheName);
+            return caches.delete(cacheName);
+          }
+        })
+      );
+    }).then(() => self.clients.claim())
+  );
 });
 
-// Fetch - CRITICAL: Intercept widget data requests
+// Fetch - Network first, fallback to cache
 self.addEventListener('fetch', (event) => {
-  if (event.request.url.includes('widget-minimal-data.json')) {
-    event.respondWith(
-      new Response(JSON.stringify({
-        template: 'widget-minimal',
-        data: {
-          isPlaying: currentState.isPlaying,
-          trackTitle: currentState.currentTrack.title,
-          artist: currentState.currentTrack.artist
-        }
-      }), {
-        headers: { 'Content-Type': 'application/json' }
-      })
-    );
+  // Skip non-GET requests
+  if (event.request.method !== 'GET') {
     return;
   }
   
-  if (event.request.url.includes('widget-full-data.json')) {
-    event.respondWith(
-      new Response(JSON.stringify({
-        template: 'widget-full',
-        data: {
-          isPlaying: currentState.isPlaying,
-          trackTitle: currentState.currentTrack.title,
-          artist: currentState.currentTrack.artist,
-          album: currentState.currentTrack.album,
-          albumArt: currentState.currentTrack.albumArt || '',
-          progress: currentState.progress,
-          currentTime: formatTime(currentState.currentTime),
-          duration: formatTime(currentState.duration)
-        }
-      }), {
-        headers: { 'Content-Type': 'application/json' }
-      })
-    );
+  // Skip chrome-extension and non-http(s) requests
+  if (!event.request.url.startsWith('http')) {
     return;
   }
   
-  // Normal fetch handling
   event.respondWith(
-    caches.match(event.request)
-      .then(response => response || fetch(event.request))
+    fetch(event.request)
+      .then(response => {
+        // Clone the response before caching
+        const responseToCache = response.clone();
+        
+        // Only cache successful responses
+        if (response.status === 200) {
+          caches.open(CACHE_NAME).then(cache => {
+            cache.put(event.request, responseToCache);
+          });
+        }
+        
+        return response;
+      })
+      .catch(() => {
+        // Network failed, try cache
+        return caches.match(event.request).then(response => {
+          if (response) {
+            console.log('[SW] Serving from cache:', event.request.url);
+            return response;
+          }
+          
+          // If it's an HTML page, return the index
+          if (event.request.headers.get('accept').includes('text/html')) {
+            return caches.match('./index.html');
+          }
+          
+          // Otherwise return 404
+          return new Response('Not found', { status: 404 });
+        });
+      })
   );
 });
 
@@ -138,7 +152,7 @@ async function updateAllWidgets() {
 // Forward widget commands to main app
 async function forwardCommandToMainApp(action) {
   const clients = await self.clients.matchAll({ type: 'window' });
-  const mainApp = clients.find(c => c.url.includes('index.html'));
+  const mainApp = clients.find(c => c.url.includes('index.html') || c.url.endsWith('/'));
   
   if (mainApp) {
     mainApp.postMessage({ 
@@ -146,7 +160,8 @@ async function forwardCommandToMainApp(action) {
       action: action 
     });
   } else {
-    await self.clients.openWindow('/index.html');
+    // Open the app if not found
+    await self.clients.openWindow('./index.html');
   }
 }
 
@@ -157,11 +172,4 @@ function formatTime(seconds) {
   return `${min}:${sec}`;
 }
 
-// Periodic Background Sync for widgets (Android only)
-self.addEventListener('periodicsync', (event) => {
-  if (event.tag === 'update-widgets') {
-    event.waitUntil(updateAllWidgets());
-  }
-});
-
-console.log('[SW] Loaded with Android widget support');
+console.log('[SW] Loaded successfully');
