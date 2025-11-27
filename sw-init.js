@@ -1,22 +1,38 @@
 // Enhanced PWA registration with Chrome OS detection
-// ONLY register service worker if NOT running as an extension
-if ('serviceWorker' in navigator && typeof chromeosPlatform !== 'undefined') {
-  // Skip service worker registration in extension mode
-  if (chromeosPlatform.isExtension) {
-    console.log('⏭️ Skipping service worker registration (already handled by extension background)');
-    // Still request persistent storage
-    chromeosPlatform.requestPersistentStorage();
-  } else {
-    // Only register for PWA/web mode
-    const swPath = '/service-worker.js';
+// Register service worker for PWA, skip for extension
+if ('serviceWorker' in navigator) {
+  // Check if running as extension
+  const isExtension = window.location.protocol === 'chrome-extension:';
+  
+  if (isExtension) {
+    console.log('⏭️ Skipping service worker registration (extension mode)');
     
-    navigator.serviceWorker.register(swPath)
-      .then(() => {
-        console.log(`✅ Service Worker registered (${chromeosPlatform.platformMode})`);
-        chromeosPlatform.requestPersistentStorage();
+    // Still request persistent storage
+    if (navigator.storage && navigator.storage.persist) {
+      navigator.storage.persist().then(granted => {
+        console.log(`💾 Persistent storage: ${granted ? 'granted' : 'denied'}`);
+      });
+    }
+  } else {
+    // PWA mode - register service worker
+    const swPath = './service-worker.js';
+    
+    navigator.serviceWorker.register(swPath, {
+      scope: './'
+    })
+      .then(registration => {
+        console.log('✅ Service Worker registered (PWA mode)');
+        console.log('Scope:', registration.scope);
+        
+        // Request persistent storage
+        if (navigator.storage && navigator.storage.persist) {
+          navigator.storage.persist().then(granted => {
+            console.log(`💾 Persistent storage: ${granted ? 'granted' : 'denied'}`);
+          });
+        }
       })
       .catch(err => {
-        console.error('Service Worker registration failed:', err);
+        console.error('❌ Service Worker registration failed:', err);
       });
   }
 }

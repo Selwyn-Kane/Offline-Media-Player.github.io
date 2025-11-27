@@ -1,7 +1,5 @@
 /* ============================================
-   Background Audio Handler
-   Ensures music continues playing when app is closed
-   ADD THIS SCRIPT TO index.html BEFORE script.js
+   Background Audio Handler - FIXED
    ============================================ */
 
 class BackgroundAudioHandler {
@@ -9,6 +7,7 @@ class BackgroundAudioHandler {
         this.player = null;
         this.serviceWorkerReady = false;
         this.stateUpdateInterval = null;
+        this.mediaSessionInitialized = false;
         
         this.init();
     }
@@ -16,7 +15,6 @@ class BackgroundAudioHandler {
     async init() {
         console.log('🎵 Initializing Background Audio Handler...');
         
-        // Wait for DOM to be ready
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', () => this.setup());
         } else {
@@ -32,17 +30,11 @@ class BackgroundAudioHandler {
             return;
         }
         
-        // Register Service Worker
+        // Register Service Worker for PWA (not extension)
         await this.registerServiceWorker();
-        
-        // Setup Media Session API (critical for background audio)
-        this.setupMediaSession();
         
         // Setup player event listeners
         this.setupPlayerListeners();
-        
-        // Listen for widget commands
-        this.setupWidgetListeners();
         
         // Periodic state broadcast
         this.startStateBroadcast();
@@ -56,8 +48,18 @@ class BackgroundAudioHandler {
             return;
         }
         
+        // Skip if running as Chrome extension
+        if (window.chromeosPlatform && window.chromeosPlatform.isExtension) {
+            console.log('⏭️ Skipping SW registration (extension mode)');
+            return;
+        }
+        
         try {
-            const registration = await navigator.serviceWorker.register('/service-worker.js');
+            // Use relative path for better compatibility
+            const registration = await navigator.serviceWorker.register('./service-worker.js', {
+                scope: './'
+            });
+            
             console.log('✅ Service Worker registered:', registration.scope);
             
             // Wait for service worker to be ready
@@ -75,6 +77,52 @@ class BackgroundAudioHandler {
         }
     }
     
+    setupPlayerListeners() {
+        if (!this.player) return;
+        
+        // Initialize Media Session on first play
+        this.player.addEventListener('play', () => {
+            if (!this.mediaSessionInitialized) {
+                this.setupMediaSession();
+                this.mediaSessionInitialized = true;
+            }
+            
+            this.updateMediaSessionMetadata();
+            this.broadcastState();
+            
+            if ('mediaSession' in navigator) {
+                navigator.mediaSession.playbackState = 'playing';
+            }
+        }, { once: false });
+        
+        this.player.addEventListener('pause', () => {
+            this.broadcastState();
+            if ('mediaSession' in navigator) {
+                navigator.mediaSession.playbackState = 'paused';
+            }
+        });
+        
+        // Update position state periodically
+        this.player.addEventListener('timeupdate', () => {
+            if ('setPositionState' in navigator.mediaSession) {
+                try {
+                    navigator.mediaSession.setPositionState({
+                        duration: this.player.duration || 0,
+                        playbackRate: this.player.playbackRate,
+                        position: this.player.currentTime || 0
+                    });
+                } catch (err) {
+                    // Ignore errors (happens if duration is not available yet)
+                }
+            }
+        });
+        
+        // Update metadata when track changes
+        this.player.addEventListener('loadedmetadata', () => {
+            this.updateMediaSessionMetadata();
+        });
+    }
+    
     setupMediaSession() {
         if (!('mediaSession' in navigator)) {
             console.warn('⚠️ Media Session API not supported');
@@ -83,7 +131,7 @@ class BackgroundAudioHandler {
         
         console.log('🎮 Setting up Media Session API for background playback...');
         
-        // These action handlers are CRITICAL for Android background audio
+        // CRITICAL: These handlers enable background audio
         navigator.mediaSession.setActionHandler('play', () => {
             console.log('📱 Media Session: Play');
             if (this.player) this.player.play();
@@ -128,41 +176,6 @@ class BackgroundAudioHandler {
         console.log('✅ Media Session handlers configured');
     }
     
-    setupPlayerListeners() {
-        if (!this.player) return;
-        
-        // Update Media Session metadata when track changes
-        this.player.addEventListener('loadedmetadata', () => {
-            this.updateMediaSessionMetadata();
-        });
-        
-        // Broadcast state on play/pause
-        this.player.addEventListener('play', () => {
-            this.broadcastState();
-            navigator.mediaSession.playbackState = 'playing';
-        });
-        
-        this.player.addEventListener('pause', () => {
-            this.broadcastState();
-            navigator.mediaSession.playbackState = 'paused';
-        });
-        
-        // Update position state periodically
-        this.player.addEventListener('timeupdate', () => {
-            if ('setPositionState' in navigator.mediaSession) {
-                try {
-                    navigator.mediaSession.setPositionState({
-                        duration: this.player.duration || 0,
-                        playbackRate: this.player.playbackRate,
-                        position: this.player.currentTime || 0
-                    });
-                } catch (err) {
-                    // Ignore errors (happens if duration is not available yet)
-                }
-            }
-        });
-    }
-    
     updateMediaSessionMetadata() {
         if (!('mediaSession' in navigator)) return;
         
@@ -191,43 +204,6 @@ class BackgroundAudioHandler {
         console.log('🎵 Media Session metadata updated:', metadata.title);
     }
     
-    setupWidgetListeners() {
-        if (!('serviceWorker' in navigator)) return;
-        
-        // Listen for commands from widgets via Service Worker
-        navigator.serviceWorker.addEventListener('message', (event) => {
-            if (event.data.type === 'WIDGET_COMMAND') {
-                console.log('📱 Widget command received:', event.data.action);
-                this.handleWidgetCommand(event.data.action);
-            } else if (event.data.type === 'UPDATE_MEDIA_SESSION') {
-                // Service Worker requests media session update
-                this.updateMediaSessionMetadata();
-            }
-        });
-    }
-    
-    handleWidgetCommand(action) {
-        switch (action) {
-            case 'PLAY':
-                if (this.player) this.player.play();
-                break;
-            case 'PAUSE':
-                if (this.player) this.player.pause();
-                break;
-            case 'PLAY_PAUSE':
-                if (this.player) {
-                    this.player.paused ? this.player.play() : this.player.pause();
-                }
-                break;
-            case 'NEXT':
-                this.triggerCommand('NEXT');
-                break;
-            case 'PREVIOUS':
-                this.triggerCommand('PREVIOUS');
-                break;
-        }
-    }
-    
     triggerCommand(command) {
         // Trigger button clicks in main app
         const buttons = {
@@ -246,10 +222,8 @@ class BackgroundAudioHandler {
             return;
         }
         
-        // Get current state from global variables
         const state = this.getCurrentState();
         
-        // Send to Service Worker
         navigator.serviceWorker.controller.postMessage({
             type: 'UPDATE_STATE',
             state: state
@@ -271,7 +245,6 @@ class BackgroundAudioHandler {
             }
         };
         
-        // Get track info from global playlist
         if (typeof currentTrackIndex !== 'undefined' && 
             typeof playlist !== 'undefined' && 
             currentTrackIndex !== -1 && 
@@ -292,12 +265,12 @@ class BackgroundAudioHandler {
     }
     
     startStateBroadcast() {
-        // Broadcast state every 2 seconds to keep widgets updated
+        // Broadcast state every 5 seconds to keep widgets updated
         this.stateUpdateInterval = setInterval(() => {
             this.broadcastState();
         }, 5000);
         
-        // Keep service worker alive on Android
+        // Keep service worker alive
         if (this.serviceWorkerReady) {
             setInterval(() => {
                 if (navigator.serviceWorker.controller) {
@@ -305,7 +278,7 @@ class BackgroundAudioHandler {
                         type: 'KEEP_ALIVE'
                     });
                 }
-            }, 10000); // Every 10 seconds
+            }, 10000);
         }
     }
     
