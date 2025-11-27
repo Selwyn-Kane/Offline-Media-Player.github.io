@@ -570,6 +570,59 @@ function startVisualizer() {
         function stopVisualizer() {
     visualizerManager.stop();
 }
+
+    // Widget communication system
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('message', (event) => {
+        if (event.data.type === 'WIDGET_COMMAND') {
+            handleWidgetCommand(event.data.action);
+        }
+    });
+}
+
+function handleWidgetCommand(action) {
+    switch (action) {
+        case 'PLAY':
+            player.play();
+            break;
+        case 'PAUSE':
+            player.pause();
+            break;
+        case 'NEXT':
+            if (!nextButton.disabled) playNext();
+            break;
+        case 'PREVIOUS':
+            if (!prevButton.disabled) playPrevious();
+            break;
+        case 'GET_STATE':
+            broadcastStateToWidget();
+            break;
+    }
+}
+
+function broadcastStateToWidget() {
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+        const state = {
+            isPlaying: !player.paused,
+            currentTrack: {
+                title: playlist[currentTrackIndex]?.metadata?.title || 'No track loaded',
+                artist: playlist[currentTrackIndex]?.metadata?.artist || '--',
+                albumArt: playlist[currentTrackIndex]?.metadata?.image || null
+            },
+            progress: player.duration ? (player.currentTime / player.duration) * 100 : 0
+        };
+        
+        navigator.serviceWorker.controller.postMessage({
+            type: 'UPDATE_STATE',
+            state: state
+        });
+    }
+}
+
+// Call this whenever playback state changes
+player.addEventListener('play', broadcastStateToWidget);
+player.addEventListener('pause', broadcastStateToWidget);
+player.addEventListener('timeupdate', broadcastStateToWidget);
         
         // --- Equalizer Functions ---
         function setupEqualizerControls() {

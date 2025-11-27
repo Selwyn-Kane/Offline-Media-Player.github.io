@@ -36,3 +36,24 @@
   ],
   "categories": ["music", "multimedia"]
 }
+
+{
+  "name": "Ultimate Music Player",
+  "short_name": "Music Player",
+  "start_url": "/",
+  "display": "standalone",
+  "shortcuts": [
+    {
+      "name": "Now Playing Widget",
+      "short_name": "Widget",
+      "description": "View now playing with controls",
+      "url": "/widget-now-playing.html",
+      "icons": [
+        {
+          "src": "icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
+  ]
+}
