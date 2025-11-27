@@ -1,16 +1,25 @@
 /* Service Worker - Enhanced for Android Widgets */
 
 const CACHE_NAME = 'music-player-v2';
+
+// Detect base path for GitHub Pages
+const isGitHubPages = self.location.hostname.includes('github.io');
+const BASE_PATH = isGitHubPages 
+  ? '/' + self.location.pathname.split('/')[1]  // Gets /repo-name
+  : '';
+
+console.log('[SW] Base path:', BASE_PATH);
+
 const urlsToCache = [
-  '/',
-  '/index.html',
-  '/style.css',
-  '/script.js',
-  '/mobile.js',
-  '/widget-minimal.html',
-  '/widget-full.html',
-  '/widget-minimal-data.json',
-  '/widget-full-data.json'
+  `${BASE_PATH}/`,
+  `${BASE_PATH}/index.html`,
+  `${BASE_PATH}/style.css`,
+  `${BASE_PATH}/script.js`,
+  `${BASE_PATH}/mobile.js`,
+  `${BASE_PATH}/widget-minimal.html`,
+  `${BASE_PATH}/widget-full.html`,
+  `${BASE_PATH}/widget-minimal-data.json`,
+  `${BASE_PATH}/widget-full-data.json`
 ];
 
 let currentState = {
