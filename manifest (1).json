@@ -22,14 +22,6 @@
       "purpose": "any maskable"
     }
   ],
-  "screenshots": [
-    {
-      "src": "icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "form_factor": "narrow"
-    }
-  ],
   "categories": ["music", "entertainment"],
   "shortcuts": [
     {
@@ -47,20 +39,19 @@
   ],
   "widgets": [
     {
-      "name": "Now Playing - Minimal",
+      "name": "Music Controls",
       "short_name": "Controls",
-      "description": "Playback controls only",
-      "tag": "minimal-widget",
+      "description": "Playback controls",
+      "tag": "music-controls",
       "template": "widget-minimal.html",
-      "ms_ac_template": "widget-minimal-ac.json",
-      "auth": false,
-      "update": 1000,
-      "type": "application/vnd.microsoft.card.adaptive",
+      "ms_ac_template": "widget-minimal-data.json",
+      "data": "widget-minimal-data.json",
+      "type": "application/json",
       "screenshots": [
         {
-          "src": "widget-minimal-screenshot.png",
+          "src": "icon-512.png",
           "sizes": "512x512",
-          "label": "Minimal widget with playback controls"
+          "label": "Music controls widget"
         }
       ],
       "icons": [
@@ -68,23 +59,24 @@
           "src": "icon-192.png",
           "sizes": "192x192"
         }
-      ]
+      ],
+      "auth": false,
+      "update": 30
     },
     {
-      "name": "Now Playing - Full",
+      "name": "Now Playing",
       "short_name": "Now Playing",
       "description": "Full track info with controls",
-      "tag": "full-widget",
+      "tag": "now-playing",
       "template": "widget-full.html",
-      "ms_ac_template": "widget-full-ac.json",
-      "auth": false,
-      "update": 1000,
-      "type": "application/vnd.microsoft.card.adaptive",
+      "ms_ac_template": "widget-full-data.json",
+      "data": "widget-full-data.json",
+      "type": "application/json",
       "screenshots": [
         {
-          "src": "widget-full-screenshot.png",
+          "src": "icon-512.png",
           "sizes": "512x512",
-          "label": "Full widget with album art and metadata"
+          "label": "Now playing widget"
         }
       ],
       "icons": [
@@ -92,11 +84,12 @@
           "src": "icon-192.png",
           "sizes": "192x192"
         }
-      ]
+      ],
+      "auth": false,
+      "update": 30
     }
   ],
   "prefer_related_applications": false,
-  "related_applications": [],
   "share_target": {
     "action": "/share-audio",
     "method": "POST",
