@@ -1,8 +1,7 @@
-/* Service Worker - Enhanced for PWA on GitHub Pages */
+/* Service Worker - Enhanced Widget Support */
 
-const CACHE_NAME = 'music-player-v3'; // Increment version to force cache update
+const CACHE_NAME = 'music-player-v4';
 
-// Simple URLs to cache (relative paths work on both local and GH Pages)
 const urlsToCache = [
   './',
   './index.html',
@@ -10,8 +9,7 @@ const urlsToCache = [
   './script.js',
   './mobile.js',
   './gh-pages-config.js',
-  './sw-init.js',
-  './service-worker.js'
+  './sw-init.js'
 ];
 
 let currentState = {
@@ -32,18 +30,8 @@ self.addEventListener('install', (event) => {
   console.log('[SW] Installing...');
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then((cache) => {
-        console.log('[SW] Caching app files');
-        return cache.addAll(urlsToCache).catch(err => {
-          console.warn('[SW] Some files failed to cache:', err);
-          // Don't fail the entire install if some files don't cache
-          return Promise.resolve();
-        });
-      })
-      .then(() => {
-        console.log('[SW] Skip waiting');
-        return self.skipWaiting();
-      })
+      .then((cache) => cache.addAll(urlsToCache).catch(() => Promise.resolve()))
+      .then(() => self.skipWaiting())
   );
 });
 
@@ -51,60 +39,43 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   console.log('[SW] Activating...');
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
+    caches.keys()
+      .then((cacheNames) => Promise.all(
         cacheNames.map((cacheName) => {
           if (cacheName !== CACHE_NAME) {
-            console.log('[SW] Deleting old cache:', cacheName);
             return caches.delete(cacheName);
           }
         })
-      );
-    }).then(() => self.clients.claim())
+      ))
+      .then(() => self.clients.claim())
   );
 });
 
-// Fetch - Network first, fallback to cache
+// Fetch
 self.addEventListener('fetch', (event) => {
-  // Skip non-GET requests
-  if (event.request.method !== 'GET') {
-    return;
-  }
-  
-  // Skip chrome-extension and non-http(s) requests
-  if (!event.request.url.startsWith('http')) {
+  if (event.request.method !== 'GET' || !event.request.url.startsWith('http')) {
     return;
   }
   
   event.respondWith(
     fetch(event.request)
       .then(response => {
-        // Clone the response before caching
-        const responseToCache = response.clone();
-        
-        // Only cache successful responses
         if (response.status === 200) {
+          const responseToCache = response.clone();
           caches.open(CACHE_NAME).then(cache => {
             cache.put(event.request, responseToCache);
           });
         }
-        
         return response;
       })
       .catch(() => {
-        // Network failed, try cache
         return caches.match(event.request).then(response => {
           if (response) {
-            console.log('[SW] Serving from cache:', event.request.url);
             return response;
           }
-          
-          // If it's an HTML page, return the index
           if (event.request.headers.get('accept').includes('text/html')) {
             return caches.match('./index.html');
           }
-          
-          // Otherwise return 404
           return new Response('Not found', { status: 404 });
         });
       })
@@ -112,18 +83,28 @@ self.addEventListener('fetch', (event) => {
 });
 
 // Message handler
-self.addEventListener('message', async (event) => {
+self.addEventListener('message', (event) => {
+  console.log('[SW] Message received:', event.data);
+  
   const { type, state, action } = event.data;
   
   switch (type) {
     case 'UPDATE_STATE':
       currentState = { ...currentState, ...state };
       console.log('[SW] State updated:', currentState);
-      await updateAllWidgets();
+      broadcastToWidgets();
       break;
       
     case 'WIDGET_COMMAND':
-      await forwardCommandToMainApp(action);
+      forwardCommandToMainApp(action);
+      break;
+      
+    case 'GET_STATE':
+      // Send current state back to requesting client
+      event.source.postMessage({
+        type: 'STATE_UPDATE',
+        state: currentState
+      });
       break;
       
     case 'KEEP_ALIVE':
@@ -132,44 +113,76 @@ self.addEventListener('message', async (event) => {
   }
 });
 
-// Update all widget instances
-async function updateAllWidgets() {
-  const clients = await self.clients.matchAll({ 
-    type: 'window',
-    includeUncontrolled: true 
-  });
-  
-  clients.forEach(client => {
-    if (client.url.includes('widget-')) {
-      client.postMessage({ 
-        type: 'WIDGET_STATE_UPDATE', 
-        state: currentState 
+// Broadcast state to all widget clients
+function broadcastToWidgets() {
+  self.clients.matchAll({ includeUncontrolled: true })
+    .then(clients => {
+      clients.forEach(client => {
+        client.postMessage({
+          type: 'STATE_UPDATE',
+          state: currentState
+        });
       });
-    }
-  });
-}
-
-// Forward widget commands to main app
-async function forwardCommandToMainApp(action) {
-  const clients = await self.clients.matchAll({ type: 'window' });
-  const mainApp = clients.find(c => c.url.includes('index.html') || c.url.endsWith('/'));
-  
-  if (mainApp) {
-    mainApp.postMessage({ 
-      type: 'WIDGET_COMMAND', 
-      action: action 
+      console.log('[SW] Broadcasted to', clients.length, 'clients');
     });
-  } else {
-    // Open the app if not found
-    await self.clients.openWindow('./index.html');
+}
+
+// Forward commands to main app
+function forwardCommandToMainApp(action) {
+  self.clients.matchAll({ type: 'window' })
+    .then(clients => {
+      const mainApp = clients.find(c => 
+        c.url.includes('index.html') || 
+        c.url.endsWith('/') ||
+        c.focused
+      );
+      
+      if (mainApp) {
+        mainApp.postMessage({
+          type: 'WIDGET_COMMAND',
+          action: action
+        });
+        console.log('[SW] Forwarded command to main app:', action);
+      } else {
+        // Open the app if not found
+        self.clients.openWindow('./index.html');
+        console.log('[SW] Opened main app');
+      }
+    });
+}
+
+// Periodic Background Sync for widgets (Android 13+)
+self.addEventListener('periodicsync', (event) => {
+  console.log('[SW] Periodic sync triggered:', event.tag);
+  
+  if (event.tag === 'update-widget') {
+    event.waitUntil(
+      // Request state update from main app
+      self.clients.matchAll({ type: 'window' })
+        .then(clients => {
+          clients.forEach(client => {
+            client.postMessage({ type: 'WIDGET_REQUEST_UPDATE' });
+          });
+        })
+        .then(() => broadcastToWidgets())
+    );
   }
-}
+});
 
-function formatTime(seconds) {
-  if (!seconds || isNaN(seconds)) return '0:00';
-  const min = Math.floor(seconds / 60);
-  const sec = Math.floor(seconds % 60).toString().padStart(2, '0');
-  return `${min}:${sec}`;
-}
+// Notification click handler (optional - for future features)
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window' })
+      .then(clients => {
+        const client = clients.find(c => c.focused);
+        if (client) {
+          return client.focus();
+        }
+        return self.clients.openWindow('./index.html');
+      })
+  );
+});
 
-console.log('[SW] Loaded successfully');
+console.log('[SW] Loaded with widget support');
