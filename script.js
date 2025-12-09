@@ -3094,8 +3094,17 @@ function openMetadataEditorForTrack(index) {
 }
 
 // ========== END METADATA EDITOR INTEGRATION ==========
- 
-        
+
+    // Auto-fetch lyrics button
+const autoLyricsBtn = document.getElementById('auto-lyrics-btn');
+
+if (autoLyricsBtn) {
+    autoLyricsBtn.onclick = () => {
+        window.open('lyrics-fetcher.html', '_blank');
+    };
+}
+
+    
 debugLog('Music player initialized');
 
     

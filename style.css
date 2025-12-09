@@ -1698,3 +1698,10 @@ body.custom-bg::before {
     display: block;
 }
 /* ========== END CUSTOM BACKGROUND SYSTEM ========== */
+#auto-lyrics-btn {
+    background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);
+}
+
+#auto-lyrics-btn:hover:not(:disabled) {
+    background: linear-gradient(135deg, #1fc8e3 0%, #17a2b8 100%);
+}
