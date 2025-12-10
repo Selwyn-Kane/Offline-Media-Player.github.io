@@ -66,6 +66,7 @@
         <button id="compact-toggle">📄 Full View</button>
         <button id="pip-toggle">📺 Float</button>
         <button id="sticky-toggle">📌 Sticky Off</button>
+        <button id="fullscreen-lyrics-toggle">🎤 Fullscreen Lyrics</button>
         <button id="fullscreen-viz-toggle">🌌 Fullscreen Visualizer</button>
         <button id="custom-bg-button">🎨 Background</button>
         <button id="auto-lyrics-btn">🎤 Auto-Fetch Lyrics</button>
@@ -180,5 +181,21 @@
 <script src="mobile.js"></script>
 <script src="sw-init.js"></script>
 <script src="custom-background.js"></script>
+
+    <!-- Fullscreen Lyrics with Edge Visualizer -->
+<div id="fullscreen-lyrics" class="fullscreen-lyrics-hidden">
+    <canvas id="fullscreen-lyrics-viz-canvas"></canvas>
+    
+    <button class="fullscreen-lyrics-close" id="lyrics-close-btn">✕</button>
+    
+    <div class="fullscreen-lyrics-content" id="fullscreen-lyrics-content">
+        <div class="fullscreen-lyrics-empty">No lyrics available</div>
+    </div>
+    
+    <div class="fullscreen-lyrics-controls">
+        <button class="lyrics-control-btn" id="lyrics-prev-btn">◀ Previous</button>
+        <button class="lyrics-control-btn" id="lyrics-next-btn">Next ▶</button>
+    </div>
+</div>
 </body>
 </html>

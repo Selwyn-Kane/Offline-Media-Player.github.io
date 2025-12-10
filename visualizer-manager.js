@@ -221,33 +221,33 @@ drawFullscreenCircular() {
     const centerY = height / 2;
     const maxRadius = Math.min(width, height) * 0.45;
     const minRadius = maxRadius * 0.3;
-    const barCount = 180; // CHANGED from 128 to 180
+    const barCount = 180;
     
     for (let i = 0; i < barCount; i++) {
-        const dataIndex = Math.floor((i / barCount) * this.bufferLength); // ADD THIS LINE
-        const value = this.dataArray[dataIndex] / 255; // CHANGED from this.dataArray[i]
-        const barHeight = value * maxRadius * 0.7; // ← THIS LINE WAS MISSING!
+        const dataIndex = Math.floor((i / barCount) * this.bufferLength);
+        const value = this.dataArray[dataIndex] / 255;
+        const barHeight = value * maxRadius * 0.7; // ← ADD THIS LINE
         const angle = (i / barCount) * Math.PI * 2;
-            
-            const x1 = centerX + Math.cos(angle) * minRadius;
-            const y1 = centerY + Math.sin(angle) * minRadius;
-            const x2 = centerX + Math.cos(angle) * (minRadius + barHeight);
-            const y2 = centerY + Math.sin(angle) * (minRadius + barHeight);
-            
-            const hue = (i / barCount) * 360;
-            this.fullscreenCtx.strokeStyle = `hsl(${hue}, 100%, 60%)`;
-            this.fullscreenCtx.lineWidth = 5;
-            this.fullscreenCtx.shadowBlur = 15;
-            this.fullscreenCtx.shadowColor = `hsl(${hue}, 100%, 50%)`;
-            
-            this.fullscreenCtx.beginPath();
-            this.fullscreenCtx.moveTo(x1, y1);
-            this.fullscreenCtx.lineTo(x2, y2);
-            this.fullscreenCtx.stroke();
-        }
         
-        this.fullscreenCtx.shadowBlur = 0;
+        const x1 = centerX + Math.cos(angle) * minRadius;
+        const y1 = centerY + Math.sin(angle) * minRadius;
+        const x2 = centerX + Math.cos(angle) * (minRadius + barHeight);
+        const y2 = centerY + Math.sin(angle) * (minRadius + barHeight);
+        
+        const hue = (i / barCount) * 360;
+        this.fullscreenCtx.strokeStyle = `hsl(${hue}, 100%, 60%)`;
+        this.fullscreenCtx.lineWidth = 5;
+        this.fullscreenCtx.shadowBlur = 15;
+        this.fullscreenCtx.shadowColor = `hsl(${hue}, 100%, 50%)`;
+        
+        this.fullscreenCtx.beginPath();
+        this.fullscreenCtx.moveTo(x1, y1);
+        this.fullscreenCtx.lineTo(x2, y2);
+        this.fullscreenCtx.stroke();
     }
+    
+    this.fullscreenCtx.shadowBlur = 0;
+}
     
     drawFullscreenWaveform() {
         const width = this.fullscreenCanvas.width;
