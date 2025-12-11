@@ -1097,6 +1097,15 @@ function updateJumpButton() {
     // Display metadata
     displayMetadata(track.metadata);
 
+     // ✅ NEW: Pass analysis data to visualizer if available
+    if (track.analysis) {
+        visualizerManager.setTrackAnalysis(track.analysis);
+        debugLog(`🎨 Enhanced visualizer mode: BPM=${track.analysis.bpm}, Energy=${(track.analysis.energy * 100).toFixed(0)}%, Mood=${track.analysis.mood}`, 'success');
+    } else {
+        visualizerManager.clearTrackAnalysis();
+        debugLog('🎨 Standard visualizer mode (no analysis data)', 'info');
+    }
+
     // Load audio using stored URL
     player.src = track.audioURL;
     debugLog('Audio source set');
@@ -3470,7 +3479,6 @@ if (analyzeAllBtn) {
         for (let i = 0; i < playlist.length; i++) {
             const track = playlist[i];
             
-            // Create a File object from the blob URL
             try {
                 const response = await fetch(track.audioURL);
                 const blob = await response.blob();
@@ -3485,6 +3493,9 @@ if (analyzeAllBtn) {
                     analysis: analysis
                 });
                 
+                // ✅ NEW: Also save analysis back to main playlist
+                playlist[i].analysis = analysis;
+                
                 const percent = Math.round(((i + 1) / playlist.length) * 100);
                 progressFill.style.width = `${percent}%`;
                 progressFill.textContent = `${percent}%`;
@@ -3498,16 +3509,13 @@ if (analyzeAllBtn) {
         analyzeAllBtn.disabled = false;
         saveAnalysisBtn.disabled = false;
         
+        // ✅ NEW: Update current track's visualizer if playing
+        if (currentTrackIndex !== -1 && playlist[currentTrackIndex].analysis) {
+            visualizerManager.setTrackAnalysis(playlist[currentTrackIndex].analysis);
+            debugLog('🎨 Visualizer upgraded to enhanced mode!', 'success');
+        }
+        
         debugLog(`Smart playlist analysis complete: ${analyzedTracks.length} tracks`, 'success');
-    };
-}
-
-// Save Analysis Button
-if (saveAnalysisBtn) {
-    saveAnalysisBtn.onclick = () => {
-        analyzer.saveAnalysesToStorage();
-        alert('Analysis cache saved! It will load automatically next time.');
-        debugLog('Analysis cache saved', 'success');
     };
 }
 
@@ -3601,25 +3609,29 @@ if (loadSmartPlaylistBtn) {
             return;
         }
         
-        // Replace current playlist with smart playlist
-        playlist = [...currentSmartPlaylist.tracks];
+        // ✅ IMPORTANT: Keep analysis data when loading smart playlist
+        playlist = currentSmartPlaylist.tracks.map(track => ({
+            ...track,
+            analysis: track.analysis // Preserve analysis
+        }));
+        
         currentTrackIndex = 0;
         
         // Re-render playlist display
         renderPlaylist();
         updatePlaylistStatus();
         
-        // Load first track
+        // Load first track (visualizer will auto-enhance if analysis exists)
         loadTrack(0);
         
         // Close modal
         smartPlaylistModal.style.display = 'none';
         
-        alert(`✅ Loaded ${playlist.length} tracks from smart playlist!`);
-        debugLog(`Smart playlist loaded: ${playlist.length} tracks`, 'success');
+        alert(`✅ Loaded ${playlist.length} tracks from smart playlist!\n\n🎨 Enhanced visualizer is now active!`);
+        debugLog(`Smart playlist loaded: ${playlist.length} tracks with analysis data`, 'success');
 
-         setTimeout(() => {
-            smartProgressContainer.classList.remove('show');  // ← CHANGED
+        setTimeout(() => {
+            smartProgressContainer.classList.remove('show');
         }, 2000);
     };
 }

@@ -1,5 +1,5 @@
 /* ============================================
-   Visualizer Manager - Separated for lazy loading
+   Visualizer Manager - ENHANCED WITH ANALYSIS DATA
    ============================================ */
 
 class VisualizerManager {
@@ -18,33 +18,88 @@ class VisualizerManager {
         this.fullscreenCtx = null;
         this.vizMode = 'bars';
         this.particles = [];
+        
+        // ✅ NEW: Analysis-enhanced features
+        this.currentAnalysis = null;
+        this.bpmPulseOffset = 0;
+        this.lastBeatTime = 0;
     }
     
-    // Initialize main visualizer (called on first play)
+    // ✅ NEW: Set current track analysis data
+    setTrackAnalysis(analysis) {
+        this.currentAnalysis = analysis;
+        this.bpmPulseOffset = 0;
+        this.lastBeatTime = performance.now();
+        console.log('🎵 Visualizer using analysis:', analysis);
+    }
+    
+    // ✅ NEW: Clear analysis data
+    clearTrackAnalysis() {
+        this.currentAnalysis = null;
+    }
+    
+    // ✅ NEW: Get color scheme based on mood
+    getMoodColors() {
+        if (!this.currentAnalysis) {
+            return {
+                primary: [340, 80, 50],   // Default red
+                secondary: [340, 80, 30]
+            };
+        }
+        
+        const moodColors = {
+            'energetic': { primary: [0, 100, 60], secondary: [30, 100, 50] },      // Red-Orange
+            'calm': { primary: [200, 70, 50], secondary: [220, 70, 40] },          // Blue
+            'bright': { primary: [50, 100, 60], secondary: [60, 100, 50] },        // Yellow
+            'dark': { primary: [270, 60, 40], secondary: [280, 60, 30] },          // Purple
+            'neutral': { primary: [340, 80, 50], secondary: [340, 80, 30] }        // Red (default)
+        };
+        
+        return moodColors[this.currentAnalysis.mood] || moodColors.neutral;
+    }
+    
+    // ✅ NEW: Calculate BPM-synced pulse
+    getBPMPulse() {
+        if (!this.currentAnalysis || !this.currentAnalysis.bpm) {
+            return 1.0;
+        }
+        
+        const now = performance.now();
+        const beatInterval = (60 / this.currentAnalysis.bpm) * 1000; // ms per beat
+        const timeSinceLastBeat = (now - this.lastBeatTime) % beatInterval;
+        const pulseProgress = timeSinceLastBeat / beatInterval;
+        
+        // Sine wave pulse (0.8 to 1.2)
+        return 1.0 + Math.sin(pulseProgress * Math.PI * 2) * 0.2;
+    }
+    
+    // ✅ NEW: Get energy-based speed multiplier
+    getEnergyMultiplier() {
+        if (!this.currentAnalysis) return 1.0;
+        return 0.5 + (this.currentAnalysis.energy * 1.5); // 0.5x to 2x speed
+    }
+    
     initMainVisualizer(canvasElement, analyser) {
-    if (this.canvas) return; // Already initialized
-    
-    // Add null checks
-    if (!canvasElement || !analyser) {
-        console.warn('Visualizer initialization failed: canvas or analyser is null');
-        return;
+        if (this.canvas) return;
+        
+        if (!canvasElement || !analyser) {
+            console.warn('Visualizer initialization failed: canvas or analyser is null');
+            return;
+        }
+        
+        this.canvas = canvasElement;
+        this.canvasCtx = this.canvas.getContext('2d');
+        this.analyser = analyser;
+        this.bufferLength = analyser.frequencyBinCount;
+        this.dataArray = new Uint8Array(this.bufferLength);
+        
+        this.canvas.width = this.canvas.offsetWidth;
+        this.canvas.height = this.canvas.offsetHeight;
     }
     
-    this.canvas = canvasElement;
-    this.canvasCtx = this.canvas.getContext('2d');
-    this.analyser = analyser;
-    this.bufferLength = analyser.frequencyBinCount;
-    this.dataArray = new Uint8Array(this.bufferLength);
-    
-    // Set canvas size
-    this.canvas.width = this.canvas.offsetWidth;
-    this.canvas.height = this.canvas.offsetHeight;
-}
-    
-    // Start main visualizer animation
     start(shouldRun) {
         if (!this.canvas || !shouldRun) return;
-        if (this.animationId) return; // Already running
+        if (this.animationId) return;
         
         this.draw();
     }
@@ -68,7 +123,7 @@ class VisualizerManager {
         this.canvasCtx.fillStyle = gradient;
         this.canvasCtx.fillRect(0, 0, this.canvas.width, this.canvas.height);
         
-        // Draw bars
+        // Draw bars (enhanced with analysis)
         this.drawBars();
     }
     
@@ -76,16 +131,25 @@ class VisualizerManager {
         const barWidth = (this.canvas.width / this.bufferLength) * 2.5;
         let x = 0;
         
+        // ✅ ENHANCED: Get mood colors and BPM pulse
+        const colors = this.getMoodColors();
+        const pulse = this.getBPMPulse();
+        const energyMult = this.getEnergyMultiplier();
+        
         for (let i = 0; i < this.bufferLength; i++) {
-            const barHeight = (this.dataArray[i] / 255) * this.canvas.height * 0.8;
+            let barHeight = (this.dataArray[i] / 255) * this.canvas.height * 0.8;
+            
+            // ✅ ENHANCED: Apply BPM pulse to bar height
+            barHeight *= pulse;
             
             const barGradient = this.canvasCtx.createLinearGradient(
                 0, this.canvas.height - barHeight, 0, this.canvas.height
             );
             
-            const hue = (i / this.bufferLength) * 20 + 340;
-            const saturation = 80 + (this.dataArray[i] / 255) * 20;
-            const lightness = 45 + (this.dataArray[i] / 255) * 15;
+            // ✅ ENHANCED: Use mood-based colors
+            const hue = colors.primary[0] + (i / this.bufferLength) * 40;
+            const saturation = colors.primary[1] + (this.dataArray[i] / 255) * 20;
+            const lightness = colors.primary[2] + (this.dataArray[i] / 255) * 15;
             
             barGradient.addColorStop(0, `hsl(${hue}, ${saturation}%, ${lightness}%)`);
             barGradient.addColorStop(1, `hsl(${hue}, ${saturation}%, ${lightness - 20}%)`);
@@ -132,7 +196,6 @@ class VisualizerManager {
         if (!enabled) this.stop();
     }
     
-    // Lazy load fullscreen visualizer methods
     initFullscreenVisualizer(canvasElement) {
         if (this.fullscreenCanvas) return;
         
@@ -143,111 +206,129 @@ class VisualizerManager {
     }
    
     startFullscreen(analyser, dataArray) {
-    if (!this.analyser) {
-        this.analyser = analyser;
-        this.bufferLength = analyser.frequencyBinCount;
-        this.dataArray = new Uint8Array(this.bufferLength);
-    } else {
-        this.dataArray = dataArray;
+        if (!this.analyser) {
+            this.analyser = analyser;
+            this.bufferLength = analyser.frequencyBinCount;
+            this.dataArray = new Uint8Array(this.bufferLength);
+        } else {
+            this.dataArray = dataArray;
+        }
+        
+        this.drawFullscreen();
     }
-    
-    this.drawFullscreen();
-}
   
     drawFullscreen = () => {
-    if (!this.fullscreenCanvas || !this.analyser) {
-        this.animationId = null;
-        return;
+        if (!this.fullscreenCanvas || !this.analyser) {
+            this.animationId = null;
+            return;
+        }
+        
+        this.animationId = requestAnimationFrame(this.drawFullscreen);
+        
+        this.analyser.getByteFrequencyData(this.dataArray);
+        
+        // Clear with fade effect
+        this.fullscreenCtx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+        this.fullscreenCtx.fillRect(0, 0, this.fullscreenCanvas.width, this.fullscreenCanvas.height);
+        
+        // Draw based on mode
+        switch(this.vizMode) {
+            case 'bars':
+                this.drawFullscreenBars();
+                break;
+            case 'circular':
+                this.drawFullscreenCircular();
+                break;
+            case 'waveform':
+                this.drawFullscreenWaveform();
+                break;
+            case 'particles':
+                this.drawFullscreenParticles();
+                break;
+        }
+        
     }
     
-    this.animationId = requestAnimationFrame(this.drawFullscreen);
     
-    // Get fresh audio data
-    this.analyser.getByteFrequencyData(this.dataArray);
-    
-    // Clear with fade effect
-    this.fullscreenCtx.fillStyle = 'rgba(0, 0, 0, 0.2)';
-    this.fullscreenCtx.fillRect(0, 0, this.fullscreenCanvas.width, this.fullscreenCanvas.height);
-    
-    // Draw based on mode
-    switch(this.vizMode) {
-        case 'bars':
-            this.drawFullscreenBars();
-            break;
-        case 'circular':
-            this.drawFullscreenCircular();
-            break;
-        case 'waveform':
-            this.drawFullscreenWaveform();
-            break;
-        case 'particles':
-            this.drawFullscreenParticles();
-            break;
+    drawFullscreenBars() {
+        const width = this.fullscreenCanvas.width;
+        const height = this.fullscreenCanvas.height;
+        const barCount = 160;
+        const barWidth = width / barCount;
+        
+        // ✅ ENHANCED: Get mood colors and BPM pulse
+        const colors = this.getMoodColors();
+        const pulse = this.getBPMPulse();
+        
+        for (let i = 0; i < barCount; i++) {
+            const dataIndex = Math.floor((i / barCount) * this.bufferLength);
+            const value = this.dataArray[dataIndex] / 255;
+            let barHeight = value * height * 0.9;
+            
+            // ✅ ENHANCED: Apply BPM pulse
+            barHeight *= pulse;
+            
+            const x = i * barWidth;
+            const y = height - barHeight;
+            
+            // ✅ ENHANCED: Use mood-based colors
+            const hue = colors.primary[0] + (i / barCount) * 60;
+            const gradient = this.fullscreenCtx.createLinearGradient(x, y, x, height);
+            gradient.addColorStop(0, `hsl(${hue}, 100%, 60%)`);
+            gradient.addColorStop(1, `hsl(${hue}, 100%, 30%)`);
+            
+            this.fullscreenCtx.fillStyle = gradient;
+            this.fullscreenCtx.fillRect(x, y, barWidth - 2, barHeight);
+            
+            this.fullscreenCtx.shadowBlur = 20;
+            this.fullscreenCtx.shadowColor = `hsl(${hue}, 100%, 50%)`;
+            this.fullscreenCtx.fillRect(x, y, barWidth - 2, barHeight);
+            this.fullscreenCtx.shadowBlur = 0;
+        }
     }
-}
     
-drawFullscreenBars() {
-    const width = this.fullscreenCanvas.width;
-    const height = this.fullscreenCanvas.height;
-    const barCount = 160; // CHANGED from 128 to 160 for more coverage
-    const barWidth = width / barCount;
-    
-    for (let i = 0; i < barCount; i++) {
-        // CHANGED: Map data array indices to cover full spectrum
-        const dataIndex = Math.floor((i / barCount) * this.bufferLength);
-        const value = this.dataArray[dataIndex] / 255;
-        const barHeight = value * height * 0.9;
-        const x = i * barWidth;
-        const y = height - barHeight;
+    drawFullscreenCircular() {
+        const width = this.fullscreenCanvas.width;
+        const height = this.fullscreenCanvas.height;
+        const centerX = width / 2;
+        const centerY = height / 2;
+        const maxRadius = Math.min(width, height) * 0.45;
+        const minRadius = maxRadius * 0.3;
+        const barCount = 180;
         
-        const hue = (i / barCount) * 360;
-        const gradient = this.fullscreenCtx.createLinearGradient(x, y, x, height);
-        gradient.addColorStop(0, `hsl(${hue}, 100%, 60%)`);
-        gradient.addColorStop(1, `hsl(${hue}, 100%, 30%)`);
+        // ✅ ENHANCED
+        const colors = this.getMoodColors();
+        const pulse = this.getBPMPulse();
         
-        this.fullscreenCtx.fillStyle = gradient;
-        this.fullscreenCtx.fillRect(x, y, barWidth - 2, barHeight);
+        for (let i = 0; i < barCount; i++) {
+            const dataIndex = Math.floor((i / barCount) * this.bufferLength);
+            const value = this.dataArray[dataIndex] / 255;
+            let barHeight = value * maxRadius * 0.7;
+            
+            // ✅ ENHANCED: Apply BPM pulse
+            barHeight *= pulse;
+            
+            const angle = (i / barCount) * Math.PI * 2;
+            
+            const x1 = centerX + Math.cos(angle) * minRadius;
+            const y1 = centerY + Math.sin(angle) * minRadius;
+            const x2 = centerX + Math.cos(angle) * (minRadius + barHeight);
+            const y2 = centerY + Math.sin(angle) * (minRadius + barHeight);
+            
+            const hue = colors.primary[0] + (i / barCount) * 120;
+            this.fullscreenCtx.strokeStyle = `hsl(${hue}, 100%, 60%)`;
+            this.fullscreenCtx.lineWidth = 5;
+            this.fullscreenCtx.shadowBlur = 15;
+            this.fullscreenCtx.shadowColor = `hsl(${hue}, 100%, 50%)`;
+            
+            this.fullscreenCtx.beginPath();
+            this.fullscreenCtx.moveTo(x1, y1);
+            this.fullscreenCtx.lineTo(x2, y2);
+            this.fullscreenCtx.stroke();
+        }
         
-        this.fullscreenCtx.shadowBlur = 20;
-        this.fullscreenCtx.shadowColor = `hsl(${hue}, 100%, 50%)`;
-        this.fullscreenCtx.fillRect(x, y, barWidth - 2, barHeight);
         this.fullscreenCtx.shadowBlur = 0;
     }
-}
-drawFullscreenCircular() {
-    const width = this.fullscreenCanvas.width;
-    const height = this.fullscreenCanvas.height;
-    const centerX = width / 2;
-    const centerY = height / 2;
-    const maxRadius = Math.min(width, height) * 0.45;
-    const minRadius = maxRadius * 0.3;
-    const barCount = 180;
-    
-    for (let i = 0; i < barCount; i++) {
-        const dataIndex = Math.floor((i / barCount) * this.bufferLength);
-        const value = this.dataArray[dataIndex] / 255;
-        const barHeight = value * maxRadius * 0.7; // ← ADD THIS LINE
-        const angle = (i / barCount) * Math.PI * 2;
-        
-        const x1 = centerX + Math.cos(angle) * minRadius;
-        const y1 = centerY + Math.sin(angle) * minRadius;
-        const x2 = centerX + Math.cos(angle) * (minRadius + barHeight);
-        const y2 = centerY + Math.sin(angle) * (minRadius + barHeight);
-        
-        const hue = (i / barCount) * 360;
-        this.fullscreenCtx.strokeStyle = `hsl(${hue}, 100%, 60%)`;
-        this.fullscreenCtx.lineWidth = 5;
-        this.fullscreenCtx.shadowBlur = 15;
-        this.fullscreenCtx.shadowColor = `hsl(${hue}, 100%, 50%)`;
-        
-        this.fullscreenCtx.beginPath();
-        this.fullscreenCtx.moveTo(x1, y1);
-        this.fullscreenCtx.lineTo(x2, y2);
-        this.fullscreenCtx.stroke();
-    }
-    
-    this.fullscreenCtx.shadowBlur = 0;
-}
     
     drawFullscreenWaveform() {
         const width = this.fullscreenCanvas.width;
@@ -256,10 +337,15 @@ drawFullscreenCircular() {
         const sliceWidth = width / this.bufferLength;
         const amplitude = height * 0.45;
         
+        // ✅ ENHANCED: Use mood colors
+        const colors = this.getMoodColors();
+        const primaryColor = `hsl(${colors.primary[0]}, ${colors.primary[1]}%, ${colors.primary[2]}%)`;
+        const secondaryColor = `hsl(${colors.secondary[0]}, ${colors.secondary[1]}%, ${colors.secondary[2]}%)`;
+        
         this.fullscreenCtx.lineWidth = 3;
-        this.fullscreenCtx.strokeStyle = '#dc3545';
+        this.fullscreenCtx.strokeStyle = primaryColor;
         this.fullscreenCtx.shadowBlur = 20;
-        this.fullscreenCtx.shadowColor = '#dc3545';
+        this.fullscreenCtx.shadowColor = primaryColor;
         
         this.fullscreenCtx.beginPath();
         
@@ -280,7 +366,7 @@ drawFullscreenCircular() {
         this.fullscreenCtx.lineTo(width, centerY);
         this.fullscreenCtx.stroke();
         
-        this.fullscreenCtx.strokeStyle = '#ff7788';
+        this.fullscreenCtx.strokeStyle = secondaryColor;
         this.fullscreenCtx.beginPath();
         
         x = 0;
@@ -308,15 +394,19 @@ drawFullscreenCircular() {
         const centerX = width / 2;
         const centerY = height / 2;
         
+        // ✅ ENHANCED: Use energy multiplier
+        const energyMult = this.getEnergyMultiplier();
+        const colors = this.getMoodColors();
+        
         // Create particles
-        for (let i = 0; i < 5; i++) {
+        for (let i = 0; i < Math.floor(5 * energyMult); i++) {
             const value = this.dataArray[Math.floor(Math.random() * this.bufferLength)] / 255;
             
             if (value > 0.3) {
                 const angle = Math.random() * Math.PI * 2;
-                const speed = value * 5;
+                const speed = value * 5 * energyMult;
                 const size = value * 10;
-                const hue = Math.random() * 360;
+                const hue = colors.primary[0] + Math.random() * 60;
                 
                 this.particles.push({
                     x: centerX,
@@ -352,10 +442,11 @@ drawFullscreenCircular() {
         
         // Central pulse
         const avgValue = this.dataArray.reduce((a, b) => a + b, 0) / this.bufferLength / 255;
-        const pulseRadius = 50 + (avgValue * 100);
+        const pulseRadius = 50 + (avgValue * 100) * energyMult;
         
         const gradient = this.fullscreenCtx.createRadialGradient(centerX, centerY, 0, centerX, centerY, pulseRadius);
-        gradient.addColorStop(0, 'rgba(220, 53, 69, 0.8)');
+        const pulseColor = `rgba(${colors.primary[0]}, 53, 69, 0.8)`;
+        gradient.addColorStop(0, pulseColor);
         gradient.addColorStop(1, 'rgba(220, 53, 69, 0)');
         
         this.fullscreenCtx.fillStyle = gradient;
@@ -385,8 +476,6 @@ drawFullscreenCircular() {
     }
 }
 
-// Singleton instance
 const visualizerManager = new VisualizerManager();
 
-// Verify it loaded
-console.log('✅ VisualizerManager loaded:', typeof visualizerManager);
+console.log('✅ VisualizerManager loaded (ENHANCED):', typeof visualizerManager);
