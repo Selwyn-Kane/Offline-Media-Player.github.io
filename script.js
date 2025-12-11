@@ -9,6 +9,8 @@ let vttParser = null;
 let errorRecovery = null;
 let audioPresetsManager = null;
 let metadataEditor = null;
+let analyzer = null;          // ✅ ADD THIS
+let generator = null;         // ✅ ADD THIS
 
 // Playlist data
 let playlist = [];
@@ -57,6 +59,11 @@ document.addEventListener('DOMContentLoaded', () => {
     errorRecovery = new ErrorRecovery(debugLog);
     vttParser = new VTTParser(debugLog);
     metadataEditor = new MetadataEditor(debugLog);
+
+      // ✅ ADD THESE TWO LINES HERE:
+    const analyzer = new MusicAnalyzer(debugLog);
+    const generator = new SmartPlaylistGenerator(analyzer, debugLog);
+    debugLog('✅ Smart playlist system initialized', 'success');
 
     // ========== CUSTOM METADATA STORAGE SYSTEM ==========
 
@@ -1621,6 +1628,8 @@ window.handleFileLoad = async function handleFileLoad(event) {
         clearSavedPlaylist();
         
         debugLog('Playlist cleared (memory freed)', 'warning');
+
+        updateSmartPlaylistButton();
     }
 };
 
@@ -1960,6 +1969,8 @@ async function loadFromFolder() {
         alert(`Failed to load folder: ${err.message}\n\nTry selecting the folder again.`);
         playlistStatus.textContent = 'Failed to load folder';
     }
+    updateSmartPlaylistButton();
+    
 }
         
        // --- Volume Control System ---
@@ -2126,6 +2137,8 @@ if (autoReload && localStorage.getItem('hasSavedFolder') === 'true') {
         debugLog(`Error loading saved folder: ${err.message}`, 'error');
         localStorage.removeItem('hasSavedFolder');
     }
+    analyzer.loadAnalysesFromStorage();
+debugLog('Loaded cached music analysis', 'info');
 }
             
     if (typeof jsmediatags !== 'undefined') {
@@ -3344,6 +3357,274 @@ window.addEventListener('resize', () => {
 
 debugLog('Fullscreen lyrics system initialized', 'success');
 // ========== END FULLSCREEN LYRICS WITH EDGE VISUALIZER ==========
+
+    // ========== SMART PLAYLIST INTEGRATION ==========
+
+let analyzedTracks = [];
+let currentSmartPlaylist = null;
+
+// Enable smart playlist button when tracks are loaded
+function updateSmartPlaylistButton() {
+    const smartBtn = document.getElementById('smart-playlist-button');
+    if (smartBtn) {
+        smartBtn.disabled = playlist.length === 0;
+    }
+}
+
+// Call this whenever playlist changes
+// Add to handleFileLoad, clearButton.onclick, etc.
+
+// Smart Playlist Button Handler
+const smartPlaylistBtn = document.getElementById('smart-playlist-button');
+const smartPlaylistModal = document.getElementById('smart-playlist-modal');
+const smartPlaylistClose = document.querySelector('.smart-playlist-close');
+
+if (smartPlaylistBtn) {
+    smartPlaylistBtn.onclick = () => {
+        if (playlist.length === 0) {
+            alert('Please load some music first!');
+            return;
+        }
+        
+        smartPlaylistModal.style.display = 'flex';
+        renderTemplates();
+        
+        // Check if we have cached analysis
+        const cachedCount = analyzer.analysisCache.size;
+        if (cachedCount > 0) {
+            document.getElementById('analysis-progress-text').textContent = 
+                `✅ ${cachedCount} tracks already analyzed`;
+        }
+    };
+}
+
+if (smartPlaylistClose) {
+    smartPlaylistClose.onclick = () => {
+        smartPlaylistModal.style.display = 'none';
+    };
+}
+
+// Close modal when clicking overlay
+if (smartPlaylistModal) {
+    smartPlaylistModal.querySelector('.smart-playlist-overlay').onclick = () => {
+        smartPlaylistModal.style.display = 'none';
+    };
+}
+
+// Template icons
+const templateIcons = {
+    workout: '💪',
+    study: '📚',
+    djMix: '🎧',
+    wakeUp: '☀️',
+    party: '🎉',
+    chill: '😌',
+    runJog: '🏃',
+    sleep: '😴'
+};
+
+// Render template cards
+function renderTemplates() {
+    const grid = document.getElementById('templates-grid');
+    if (!grid) return;
+    
+    grid.innerHTML = '';
+    
+    generator.getTemplateNames().forEach(name => {
+        const info = generator.getTemplateInfo(name);
+        const icon = templateIcons[name] || '🎵';
+        
+        const card = document.createElement('div');
+        card.className = 'template-card';
+        card.innerHTML = `
+            <div class="template-icon">${icon}</div>
+            <div class="template-name">${info.name}</div>
+            <div class="template-description">${info.description}</div>
+        `;
+        
+        card.onclick = () => generateSmartPlaylist(name, card);
+        grid.appendChild(card);
+    });
+}
+
+// Analyze All Tracks Button
+const analyzeAllBtn = document.getElementById('analyze-all-btn');
+const saveAnalysisBtn = document.getElementById('save-analysis-btn');
+const smartProgressContainer = document.getElementById('analysis-progress-container');  // ← RENAMED
+const progressFill = document.getElementById('analysis-progress-fill');
+const progressText = document.getElementById('analysis-progress-text');
+
+if (analyzeAllBtn) {
+    analyzeAllBtn.onclick = async () => {
+        if (playlist.length === 0) {
+            alert('No tracks loaded!');
+            return;
+        }
+        
+        analyzeAllBtn.disabled = true;
+        smartProgressContainer.classList.add('show');
+        progressText.textContent = 'Starting analysis...';
+        
+        analyzedTracks = [];
+        
+        for (let i = 0; i < playlist.length; i++) {
+            const track = playlist[i];
+            
+            // Create a File object from the blob URL
+            try {
+                const response = await fetch(track.audioURL);
+                const blob = await response.blob();
+                const file = new File([blob], track.fileName, { type: 'audio/mpeg' });
+                
+                progressText.textContent = `Analyzing: ${track.metadata?.title || track.fileName} (${i + 1}/${playlist.length})`;
+                
+                const analysis = await analyzer.analyzeTrack(file, track.fileName);
+                
+                analyzedTracks.push({
+                    ...track,
+                    analysis: analysis
+                });
+                
+                const percent = Math.round(((i + 1) / playlist.length) * 100);
+                progressFill.style.width = `${percent}%`;
+                progressFill.textContent = `${percent}%`;
+                
+            } catch (err) {
+                debugLog(`Failed to analyze ${track.fileName}: ${err.message}`, 'error');
+            }
+        }
+        
+        progressText.textContent = `✅ Analysis complete! ${analyzedTracks.length} tracks analyzed`;
+        analyzeAllBtn.disabled = false;
+        saveAnalysisBtn.disabled = false;
+        
+        debugLog(`Smart playlist analysis complete: ${analyzedTracks.length} tracks`, 'success');
+    };
+}
+
+// Save Analysis Button
+if (saveAnalysisBtn) {
+    saveAnalysisBtn.onclick = () => {
+        analyzer.saveAnalysesToStorage();
+        alert('Analysis cache saved! It will load automatically next time.');
+        debugLog('Analysis cache saved', 'success');
+    };
+}
+
+// Generate Playlist
+async function generateSmartPlaylist(templateName, cardElement) {
+    if (analyzedTracks.length === 0) {
+        alert('Please analyze your music first!');
+        return;
+    }
+    
+    // Clear previous selection
+    document.querySelectorAll('.template-card').forEach(c => c.classList.remove('active'));
+    cardElement.classList.add('active');
+    
+    debugLog(`Generating ${templateName} playlist...`, 'info');
+    
+    // Generate
+    currentSmartPlaylist = await generator.generatePlaylist(templateName, analyzedTracks);
+    
+    if (currentSmartPlaylist && currentSmartPlaylist.tracks.length > 0) {
+        displaySmartPlaylist(currentSmartPlaylist);
+    } else {
+        alert('No tracks match the playlist criteria. Try analyzing more music!');
+    }
+}
+
+// Display Generated Playlist
+function displaySmartPlaylist(smartPlaylist) {
+    const result = document.getElementById('smart-playlist-result');
+    result.classList.add('show');
+    
+    // Update header
+    document.getElementById('result-title').textContent = smartPlaylist.name;
+    document.getElementById('result-description').textContent = smartPlaylist.description;
+    
+    // Display stats
+    const statsContainer = document.getElementById('smart-playlist-stats');
+    statsContainer.innerHTML = `
+        <div class="stat-box">
+            <div class="stat-label">Tracks</div>
+            <div class="stat-value">${smartPlaylist.stats.trackCount}</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-label">Duration</div>
+            <div class="stat-value">${smartPlaylist.stats.durationFormatted}</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-label">Avg BPM</div>
+            <div class="stat-value">${Math.round(smartPlaylist.stats.avgBPM)}</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-label">Avg Energy</div>
+            <div class="stat-value">${(smartPlaylist.stats.avgEnergy * 100).toFixed(0)}%</div>
+        </div>
+    `;
+    
+    // Display tracks
+    const trackList = document.getElementById('smart-track-list');
+    trackList.innerHTML = '';
+    
+    smartPlaylist.tracks.forEach((track, i) => {
+        const item = document.createElement('div');
+        item.className = 'track-item';
+        item.innerHTML = `
+            <div class="track-number">${i + 1}</div>
+            <div class="track-info">
+                <div class="track-title">${track.metadata?.title || track.fileName}</div>
+                <div class="track-artist">${track.metadata?.artist || 'Unknown Artist'}</div>
+                <div class="track-analysis">
+                    <span>BPM: ${track.analysis.bpm}</span>
+                    <span>Energy: ${(track.analysis.energy * 100).toFixed(0)}%</span>
+                    <span>${track.analysis.mood}</span>
+                </div>
+            </div>
+        `;
+        trackList.appendChild(item);
+    });
+    
+    // Scroll to result
+    result.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    
+    debugLog(`Smart playlist displayed: ${smartPlaylist.tracks.length} tracks`, 'success');
+}
+
+// Load Playlist into Main Player
+const loadSmartPlaylistBtn = document.getElementById('load-smart-playlist-btn');
+if (loadSmartPlaylistBtn) {
+    loadSmartPlaylistBtn.onclick = () => {
+        if (!currentSmartPlaylist || currentSmartPlaylist.tracks.length === 0) {
+            alert('No playlist to load!');
+            return;
+        }
+        
+        // Replace current playlist with smart playlist
+        playlist = [...currentSmartPlaylist.tracks];
+        currentTrackIndex = 0;
+        
+        // Re-render playlist display
+        renderPlaylist();
+        updatePlaylistStatus();
+        
+        // Load first track
+        loadTrack(0);
+        
+        // Close modal
+        smartPlaylistModal.style.display = 'none';
+        
+        alert(`✅ Loaded ${playlist.length} tracks from smart playlist!`);
+        debugLog(`Smart playlist loaded: ${playlist.length} tracks`, 'success');
+
+         setTimeout(() => {
+            smartProgressContainer.classList.remove('show');  // ← CHANGED
+        }, 2000);
+    };
+}
+
+// ========== END SMART PLAYLIST INTEGRATION ==========
 
     
 debugLog('Music player initialized');

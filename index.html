@@ -54,6 +54,7 @@
         <button id="load-button">📂 Load Music & Lyrics</button>
         <button id="folder-button">📁 Select Music Folder</button>
         <button id="clear-folder-button" style="display: none;">🗑️ Forget Folder</button>
+        <button id="smart-playlist-button" disabled>🧠 Smart Playlists</button>
         <label style="display: none; color: #fff; font-size: 14px; margin-left: 10px;" id="auto-reload-label">
         <input type="checkbox" id="auto-reload-check" checked>
         <!--Auto-reload folder-->
@@ -175,6 +176,8 @@
     <script src="youtube-search.js"></script>
     <script src="download-ui.js"></script>
     <script src="background-audio-handler.js"></script>
+    <script src="music-analyzer.js"></script>
+    <script src="smart-playlist-generator.js"></script>
     <script src="script.js"></script>
 
  <!-- ADD THIS RIGHT BEFORE </body> -->
@@ -197,5 +200,61 @@
         <button class="lyrics-control-btn" id="lyrics-next-btn">Next ▶</button>
     </div>
 </div>
+
+    <!-- Smart Playlist Modal -->
+<div id="smart-playlist-modal" style="display: none;">
+    <div class="smart-playlist-overlay"></div>
+    <div class="smart-playlist-content">
+        <div class="smart-playlist-header">
+            <h2>🧠 Smart Playlist Generator</h2>
+            <button class="smart-playlist-close">✕</button>
+        </div>
+        
+        <div class="smart-playlist-body">
+            <!-- Analysis Section -->
+            <div class="analysis-section">
+                <h3>📊 Step 1: Analyze Your Music</h3>
+                <div class="button-group">
+                    <button id="analyze-all-btn">🔍 Analyze All Tracks</button>
+                    <button id="save-analysis-btn" disabled>💾 Save Analysis</button>
+                </div>
+                <div class="progress-container" id="analysis-progress-container">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="analysis-progress-fill">0%</div>
+                    </div>
+                    <div class="progress-text" id="analysis-progress-text">Ready to analyze...</div>
+                </div>
+            </div>
+            
+            <!-- Templates Section -->
+            <div class="analysis-section">
+                <h3>🎯 Step 2: Choose Playlist Type</h3>
+                <div class="templates-grid" id="templates-grid">
+                    <!-- Templates will be inserted here by JavaScript -->
+                </div>
+            </div>
+            
+            <!-- Results Section -->
+            <div class="playlist-result" id="smart-playlist-result">
+                <div class="playlist-header">
+                    <div>
+                        <h3 id="result-title">Playlist Generated</h3>
+                        <p id="result-description" style="color: #aaa; margin-top: 5px;"></p>
+                    </div>
+                    <button id="load-smart-playlist-btn" class="success">▶️ Load to Player</button>
+                </div>
+                
+                <div class="playlist-stats" id="smart-playlist-stats">
+                    <!-- Stats will be inserted here -->
+                </div>
+                
+                <div class="track-list" id="smart-track-list">
+                    <!-- Tracks will be inserted here -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 </body>
 </html>
