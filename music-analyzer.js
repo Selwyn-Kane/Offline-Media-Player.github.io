@@ -32,7 +32,7 @@ class MusicAnalyzer {
             const analysis = {
                 bpm: await this.detectBPM(audioBuffer),
                 energy: this.calculateEnergy(audioBuffer),
-                mood: this.detectMood(audioBuffer),
+                mood: this.detectMoodEnhanced(audioBuffer),
                 key: this.detectKey(audioBuffer),
                 danceability: this.calculateDanceability(audioBuffer),
                 loudness: this.calculateLoudness(audioBuffer),
@@ -123,26 +123,94 @@ class MusicAnalyzer {
         return Math.min(energy * 10, 1);
     }
     
-    /**
-     * Mood detection (based on frequency distribution)
-     */
-    detectMood(audioBuffer) {
+/**
+ * Mood detection (improved with better thresholds)
+ */
+detectMood(audioBuffer) {
+    const energy = this.calculateEnergy(audioBuffer);
+    const spectralCentroid = this.calculateSpectralCentroid(audioBuffer);
+    
+    // Better classification with overlapping ranges
+    if (energy > 0.7) {
+        if (spectralCentroid > 2200) return 'bright';
+        return 'energetic';
+    }
+    
+    if (energy < 0.4) {
+        if (spectralCentroid < 1200) return 'dark';
+        return 'calm';
+    }
+    
+    // Middle ground - more nuanced classification
+    if (spectralCentroid > 2000) {
+        return 'bright';
+    }
+    
+    if (spectralCentroid < 1400) {
+        return 'dark';
+    }
+    
+    // Moderate energy + moderate brightness
+    if (energy > 0.55 && spectralCentroid > 1800) {
+        return 'energetic';
+    }
+    
+    if (energy < 0.45 && spectralCentroid < 1600) {
+        return 'calm';
+    }
+    
+    // Default to neutral only when truly in the middle
+    return 'neutral';
+}
+
+/**
+ * Enhanced mood detection with tempo consideration
+ */
+detectMoodEnhanced(audioBuffer) {
+    try {
+        // Get BPM for tempo-aware mood classification
+        const bpm = this.detectBPM(audioBuffer);
         const energy = this.calculateEnergy(audioBuffer);
         const spectralCentroid = this.calculateSpectralCentroid(audioBuffer);
         
-        // Simple classification based on energy and frequency
-        if (energy > 0.6 && spectralCentroid > 2000) {
+        this.debugLog(`Mood analysis: Energy=${energy.toFixed(2)}, BPM=${bpm}, SpectralCentroid=${spectralCentroid.toFixed(0)}`, 'info');
+        
+        // Factor in tempo for mood classification
+        if (energy > 0.7 && bpm > 130) {
             return 'energetic';
-        } else if (energy < 0.3 && spectralCentroid < 1500) {
-            return 'calm';
-        } else if (spectralCentroid > 2500) {
-            return 'bright';
-        } else if (spectralCentroid < 1000) {
-            return 'dark';
-        } else {
-            return 'neutral';
         }
+        
+        if (energy < 0.4 && bpm < 90) {
+            return 'calm';
+        }
+        
+        if (spectralCentroid > 2300 && energy > 0.6) {
+            return 'bright';
+        }
+        
+        if (spectralCentroid < 1200 && energy < 0.5) {
+            return 'dark';
+        }
+        
+        // Middle classifications with tempo consideration
+        if (energy > 0.6 && energy <= 0.7) {
+            if (bpm > 120) return 'energetic';
+            if (spectralCentroid > 2000) return 'bright';
+        }
+        
+        if (energy >= 0.4 && energy <= 0.5) {
+            if (bpm < 100) return 'calm';
+            if (spectralCentroid < 1500) return 'dark';
+        }
+        
+        // If still undecided, use the regular detectMood as fallback
+        return this.detectMood(audioBuffer);
+        
+    } catch (err) {
+        this.debugLog(`Enhanced mood detection failed, using fallback: ${err.message}`, 'warning');
+        return this.detectMood(audioBuffer);
     }
+}
     
     /**
      * Key detection (simplified - uses FFT to find dominant frequency)
