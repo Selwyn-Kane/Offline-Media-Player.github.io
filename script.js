@@ -48,6 +48,7 @@ let compactMode = 'full';
 // Canvas (initialized after DOM loads)
 let canvas = null;
 let canvasCtx = null;
+let currentDominantColor = null;
 
 // Color extraction cache (CRITICAL - was missing!)
 const colorCache = new Map();
@@ -61,8 +62,8 @@ document.addEventListener('DOMContentLoaded', () => {
     metadataEditor = new MetadataEditor(debugLog);
 
       // ✅ ADD THESE TWO LINES HERE:
-    const analyzer = new MusicAnalyzer(debugLog);
-    const generator = new SmartPlaylistGenerator(analyzer, debugLog);
+    analyzer = new MusicAnalyzer(debugLog);
+generator = new SmartPlaylistGenerator(analyzer, debugLog);
     debugLog('✅ Smart playlist system initialized', 'success');
 
     // ========== CUSTOM METADATA STORAGE SYSTEM ==========
@@ -587,6 +588,18 @@ if ('serviceWorker' in navigator) {
     });
 }
 
+    function getMoodColorFromAnalysis(mood) {
+    const moodColors = {
+        'energetic': { r: 255, g: 87, b: 51 },    // Red-Orange
+        'calm': { r: 51, g: 153, b: 255 },        // Blue
+        'bright': { r: 255, g: 215, b: 0 },       // Gold/Yellow
+        'dark': { r: 147, g: 51, b: 234 },        // Purple
+        'neutral': { r: 220, g: 53, b: 69 }       // Default red
+    };
+    
+    return moodColors[mood] || moodColors.neutral;
+}
+
 function handleWidgetCommand(action) {
     switch (action) {
         case 'PLAY':
@@ -755,6 +768,7 @@ async function displayMetadata(metadata) {
                 // Extract and apply color
                 const color = await extractDominantColor(metadata.image);
                 applyDynamicBackground(color);
+                currentDominantColor = color;
             } else {
                 coverArt.classList.remove('loaded');
                 coverArt.src = '';
@@ -975,13 +989,58 @@ exportLyricsButton.oncontextmenu = (e) => {
         if (track.vtt) badges.push('<span class="badge badge-lyrics">🎤 Lyrics</span>');
         if (track.metadata?.hasMetadata) badges.push('<span class="badge badge-metadata">🏷️ ID3</span>');
         
-        const infoDiv = document.createElement('div');
-        infoDiv.className = 'playlist-item-info';
-        infoDiv.innerHTML = `
-            <div class="playlist-item-title">${track.metadata?.title || track.fileName}</div>
-            <div class="playlist-item-artist">${track.metadata?.artist || 'Unknown Artist'}</div>
-            ${badges.length > 0 ? `<div class="playlist-item-badges">${badges.join('')}</div>` : ''}
-        `;
+// REPLACE IT WITH:
+const infoDiv = document.createElement('div');
+infoDiv.className = 'playlist-item-info';
+infoDiv.innerHTML = `
+    <div class="playlist-item-title">${track.metadata?.title || track.fileName}</div>
+    <div class="playlist-item-artist">${track.metadata?.artist || 'Unknown Artist'}</div>
+    ${badges.length > 0 ? `<div class="playlist-item-badges">${badges.join('')}</div>` : ''}
+`;
+
+// ✅ NEW: Apply mood-based background color if analysis exists
+if (track.analysis && track.analysis.mood) {
+    const moodColor = getMoodColorFromAnalysis(track.analysis.mood);
+    const { r, g, b } = moodColor;
+    
+    // Apply subtle gradient based on mood
+    const darkerR = Math.max(0, Math.floor(r * 0.2));
+    const darkerG = Math.max(0, Math.floor(g * 0.2));
+    const darkerB = Math.max(0, Math.floor(b * 0.2));
+    const lighterR = Math.min(255, Math.floor(r * 0.4));
+    const lighterG = Math.min(255, Math.floor(g * 0.4));
+    const lighterB = Math.min(255, Math.floor(b * 0.4));
+    
+    item.style.background = `linear-gradient(90deg, rgb(${darkerR}, ${darkerG}, ${darkerB}) 0%, rgb(${lighterR}, ${lighterG}, ${lighterB}) 100%)`;
+    item.style.borderColor = `rgb(${r}, ${g}, ${b})`;
+    
+    // Add mood indicator badge
+    const moodEmojis = {
+        'energetic': '⚡',
+        'calm': '🌊',
+        'bright': '☀️',
+        'dark': '🌙',
+        'neutral': '🎵'
+    };
+    
+    const moodBadge = document.createElement('span');
+    moodBadge.className = 'badge badge-mood';
+    moodBadge.style.cssText = `
+        background: rgba(${r}, ${g}, ${b}, 0.3);
+        color: rgb(${Math.min(255, r + 50)}, ${Math.min(255, g + 50)}, ${Math.min(255, b + 50)});
+        border: 1px solid rgb(${r}, ${g}, ${b});
+    `;
+    moodBadge.textContent = `${moodEmojis[track.analysis.mood]} ${track.analysis.mood}`;
+    
+    const badgesDiv = infoDiv.querySelector('.playlist-item-badges') || (() => {
+        const div = document.createElement('div');
+        div.className = 'playlist-item-badges';
+        infoDiv.appendChild(div);
+        return div;
+    })();
+    
+    badgesDiv.appendChild(moodBadge);
+}
         const numberDiv = document.createElement('div');
         numberDiv.className = 'playlist-item-number';
         numberDiv.textContent = index + 1;
@@ -1450,11 +1509,13 @@ window.handleFileLoad = async function handleFileLoad(event) {
 
         const audioURL = URL.createObjectURL(audioFile);
 
-        // ✅ FIXED: Now matchingVtt is defined in this scope
+// ✅ NEW: Auto-load cached analysis
+        const cachedAnalysis = analyzer.analysisCache.get(audioFile.name);
+        
         playlist.push({ 
             audioURL: audioURL,
             fileName: audioFile.name,
-            vtt: matchingVtt || null,  // ✅ This works now!
+            vtt: matchingVtt || null,
             metadata: metadata || {
                 title: audioFile.name.split('.')[0],
                 artist: 'Unknown Artist',
@@ -1462,8 +1523,13 @@ window.handleFileLoad = async function handleFileLoad(event) {
                 image: null,
                 hasMetadata: false
             },
-            duration: duration
+            duration: duration,
+            analysis: cachedAnalysis || null  // ✅ Add analysis if available
         });
+        
+        if (cachedAnalysis) {
+            debugLog(`📊 Loaded cached analysis for: ${audioFile.name}`, 'success');
+        }
     }
 
     if (playlist.length > 0) {
@@ -1472,10 +1538,15 @@ window.handleFileLoad = async function handleFileLoad(event) {
         updatePlaylistStatus();
         renderPlaylist();
         
-        // Wait for DOM to render, THEN load track
+        // Load first track
         setTimeout(() => {
             loadTrack(0);
         }, 150);
+        
+        // ✅ NEW: Start background analysis AFTER first track loads
+        setTimeout(() => {
+            startBackgroundAnalysis();
+        }, 2000);
         
         prevButton.disabled = false;
         nextButton.disabled = false;
@@ -3277,7 +3348,16 @@ function startLyricsEdgeVisualizer() {
             const value = dataArray[dataIndex] / 255;
             const barLength = value * maxBarLength;
             
-            const hue = (i / barCount) * 360;
+            // ✅ NEW: Use album art color if available
+let hue;
+if (currentDominantColor) {
+    const { r, g, b } = currentDominantColor;
+    const baseHue = Math.atan2(Math.sqrt(3) * (g - b), 2 * r - g - b) * (180 / Math.PI);
+    const normalizedHue = baseHue < 0 ? baseHue + 360 : baseHue;
+    hue = normalizedHue + (i / barCount) * 40; // Slight variation
+} else {
+    hue = (i / barCount) * 360; // Fallback to rainbow
+}
             const color = `hsl(${hue}, 100%, 60%)`;
             
             ctx.fillStyle = color;
@@ -3637,6 +3717,71 @@ if (loadSmartPlaylistBtn) {
 }
 
 // ========== END SMART PLAYLIST INTEGRATION ==========
+
+
+// ========== BACKGROUND MUSIC ANALYSIS ==========
+let backgroundAnalysisRunning = false;
+
+async function startBackgroundAnalysis() {
+    if (backgroundAnalysisRunning) return;
+    if (playlist.length === 0) return;
+    
+    backgroundAnalysisRunning = true;
+    debugLog('🔍 Starting background analysis...', 'info');
+    
+    let analyzedCount = 0;
+    
+    for (let i = 0; i < playlist.length; i++) {
+        const track = playlist[i];
+        
+        // Skip if already analyzed
+        if (track.analysis) continue;
+        
+        try {
+            // Convert audio URL to blob to file
+            const response = await fetch(track.audioURL);
+            const blob = await response.blob();
+            const file = new File([blob], track.fileName, { type: 'audio/mpeg' });
+            
+            // Analyze
+            const analysis = await analyzer.analyzeTrack(file, track.fileName);
+            
+            // Save to playlist
+            playlist[i].analysis = analysis;
+            analyzedCount++;
+            
+            // Update visualizer if this is the current track
+            if (i === currentTrackIndex) {
+                visualizerManager.setTrackAnalysis(analysis);
+                debugLog('🎨 Current track visualizer upgraded!', 'success');
+            }
+            
+            // Update playlist display to show mood colors
+            renderPlaylist();
+            
+            // Save every 5 tracks
+            if (analyzedCount % 5 === 0) {
+                analyzer.saveAnalysesToStorage();
+                debugLog(`💾 Saved ${analyzedCount} analyses`, 'info');
+            }
+            
+            // Throttle to avoid lag (analyze 1 track per second)
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+        } catch (err) {
+            debugLog(`Analysis failed for ${track.fileName}: ${err.message}`, 'error');
+        }
+    }
+    
+    // Final save
+    if (analyzedCount > 0) {
+        analyzer.saveAnalysesToStorage();
+        debugLog(`✅ Background analysis complete! ${analyzedCount} tracks analyzed`, 'success');
+    }
+    
+    backgroundAnalysisRunning = false;
+}
+// ========== END BACKGROUND ANALYSIS ==========
 
     
 debugLog('Music player initialized');

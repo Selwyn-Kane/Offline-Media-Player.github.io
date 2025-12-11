@@ -257,7 +257,20 @@ class VisualizerManager {
         const barWidth = width / barCount;
         
         // ✅ ENHANCED: Get mood colors and BPM pulse
-        const colors = this.getMoodColors();
+        // ✅ NEW: Use album art color if available, otherwise mood color
+let colors;
+if (window.currentDominantColor) {
+    const { r, g, b } = window.currentDominantColor;
+    // Convert RGB to HSL-like format
+    const hue = Math.atan2(Math.sqrt(3) * (g - b), 2 * r - g - b) * (180 / Math.PI);
+    const normalizedHue = hue < 0 ? hue + 360 : hue;
+    colors = {
+        primary: [normalizedHue, 80, 50],
+        secondary: [normalizedHue + 20, 80, 30]
+    };
+} else {
+    colors = this.getMoodColors();
+}
         const pulse = this.getBPMPulse();
         
         for (let i = 0; i < barCount; i++) {
@@ -297,7 +310,18 @@ class VisualizerManager {
         const barCount = 180;
         
         // ✅ ENHANCED
-        const colors = this.getMoodColors();
+        let colors;
+if (window.currentDominantColor) {
+    const { r, g, b } = window.currentDominantColor;
+    const hue = Math.atan2(Math.sqrt(3) * (g - b), 2 * r - g - b) * (180 / Math.PI);
+    const normalizedHue = hue < 0 ? hue + 360 : hue;
+    colors = {
+        primary: [normalizedHue, 80, 50],
+        secondary: [normalizedHue + 20, 80, 30]
+    };
+} else {
+    colors = this.getMoodColors();
+}
         const pulse = this.getBPMPulse();
         
         for (let i = 0; i < barCount; i++) {
@@ -338,7 +362,18 @@ class VisualizerManager {
         const amplitude = height * 0.45;
         
         // ✅ ENHANCED: Use mood colors
-        const colors = this.getMoodColors();
+        let colors;
+if (window.currentDominantColor) {
+    const { r, g, b } = window.currentDominantColor;
+    const hue = Math.atan2(Math.sqrt(3) * (g - b), 2 * r - g - b) * (180 / Math.PI);
+    const normalizedHue = hue < 0 ? hue + 360 : hue;
+    colors = {
+        primary: [normalizedHue, 80, 50],
+        secondary: [normalizedHue + 20, 80, 30]
+    };
+} else {
+    colors = this.getMoodColors();
+}
         const primaryColor = `hsl(${colors.primary[0]}, ${colors.primary[1]}%, ${colors.primary[2]}%)`;
         const secondaryColor = `hsl(${colors.secondary[0]}, ${colors.secondary[1]}%, ${colors.secondary[2]}%)`;
         
@@ -396,7 +431,18 @@ class VisualizerManager {
         
         // ✅ ENHANCED: Use energy multiplier
         const energyMult = this.getEnergyMultiplier();
-        const colors = this.getMoodColors();
+        let colors;
+if (window.currentDominantColor) {
+    const { r, g, b } = window.currentDominantColor;
+    const hue = Math.atan2(Math.sqrt(3) * (g - b), 2 * r - g - b) * (180 / Math.PI);
+    const normalizedHue = hue < 0 ? hue + 360 : hue;
+    colors = {
+        primary: [normalizedHue, 80, 50],
+        secondary: [normalizedHue + 20, 80, 30]
+    };
+} else {
+    colors = this.getMoodColors();
+}
         
         // Create particles
         for (let i = 0; i < Math.floor(5 * energyMult); i++) {
