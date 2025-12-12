@@ -51,6 +51,7 @@
 
 ### 🧠 Smart Playlist Generator
 - **AI-Powered Analysis**: Analyzes BPM, energy, mood, key, danceability, loudness
+- **Enhanced Mood Detection**: Now considers tempo (BPM) alongside energy and spectral brightness for more accurate classification
 - **8 Intelligent Templates**:
   - 💪 **High Energy Workout** - Energetic tracks to power through workouts
   - 📚 **Focus & Study** - Calm, consistent tracks for concentration
@@ -61,6 +62,7 @@
   - 🏃 **Running Pace** - Consistent tempo for running (150-180 BPM)
   - 😴 **Sleep & Relaxation** - Descending energy for winding down
 - **Analysis Caching**: Save analysis results to localStorage for instant playlist generation
+- **Enhanced Visualizer Integration**: Mood analysis now influences visualizer colors and effects in real-time
 - **Detailed Stats**: Track count, duration, average BPM, energy levels, mood distribution
 
 ### 📱 Mobile Optimizations
@@ -244,11 +246,18 @@ Drag music files onto page
 
 1. **Click** "🧠 Smart Playlists" button
 2. **Analyze** your music library (one-time process)
-3. **Choose** a playlist template:
+3. **Wait** for enhanced mood detection to process - now includes tempo analysis for better classification
+4. **Choose** a playlist template:
    - Workout, Study, DJ Mix, Wake Up, Party, Chill, Running, Sleep
-4. **Review** generated playlist with stats
-5. **Load** to main player with one click
-6. **Save** analysis cache for instant future generation
+5. **Review** generated playlist with stats
+6. **Load** to main player with one click - now with enhanced visualizer integration
+7. **Save** analysis cache for instant future generation
+
+**🆕 Enhanced Mood Detection:**
+- Now considers BPM alongside energy and brightness
+- More accurate classification with 5 moods: energetic, calm, bright, dark, neutral
+- Tempo-aware classification (fast tracks = energetic, slow tracks = calm)
+- Integrated with visualizer for mood-based color schemes
 
 ### 🖼️ Custom Background
 
@@ -297,13 +306,15 @@ Drag music files onto page
 
 ### Fullscreen Visualizer
 1. **Click** "🌌 Fullscreen Visualizer"
-2. **Controls**:
+2. **🆕 Enhanced Visualizer**: Now uses track mood analysis for color schemes
+3. **Controls**:
    - 🎨 Mode: Switch visualization style
    - ◀ ▶: Previous/Next track
    - ⏸ ▶: Play/Pause
    - ✕ Close (or press ESC)
-3. **Auto-hide**: Move mouse to show controls
-4. **Force Hide**: Click 👁️ button to manually hide/show controls
+4. **Auto-hide**: Move mouse to show controls
+5. **Force Hide**: Click 👁️ button to manually hide/show controls
+6. **🎨 Mood-Based Colors**: Visualizer adapts colors based on track mood (energetic = red/orange, calm = blue, bright = yellow, dark = purple)
 
 ### Fullscreen Lyrics
 1. **Click** "🎤 Fullscreen Lyrics"
@@ -338,6 +349,21 @@ Drag music files onto page
 - **Tab Hidden**: Reduces CPU usage when tab not visible
 - **Compact/Mini Mode**: Disables visualizer to save resources
 - **Smart Caching**: Color extraction, analysis results, metadata
+
+### 🎨 Enhanced Visualizer Integration
+**New: Mood-based visual effects!**
+- **Energetic tracks**: Red/orange color scheme with strong pulses
+- **Calm tracks**: Blue color scheme with gentle waves
+- **Bright tracks**: Yellow/gold colors with sparkles
+- **Dark tracks**: Purple/indigo colors with deep effects
+- **Neutral**: Default red scheme
+
+**How it works:**
+1. Track is analyzed for mood (energy + BPM + brightness)
+2. Mood classification influences visualizer colors
+3. BPM affects pulse speed and animation intensity
+4. Energy level controls visualizer sensitivity
+5. Real-time synchronization with music analysis
 
 ---
 
@@ -376,11 +402,13 @@ Drag music files onto page
 - Any filename difference prevents VTT matching
 
 ### 🧠 Smart Playlists
+- **🆕 Improved Mood Detection**: Clear analysis cache after updating to get better classifications
 - Analyze your library once, reuse forever
 - Save analysis cache to localStorage
 - Try different templates for same music
 - Adjust criteria by generating custom playlists
 - Perfect for different activities and moods
+- **Note**: The enhanced mood detector now considers tempo, so fast tracks are more likely to be "energetic" and slow tracks "calm"
 
 ### ⚡ Performance
 - Use Compact or Mini mode if visualizer lags
@@ -435,7 +463,7 @@ Drag music files onto page
 │
 ├── Core Modules:
 ├── audio-presets-manager.js        # EQ preset system
-├── visualizer-manager.js           # Visualizer rendering
+├── visualizer-manager.js           # Visualizer rendering (enhanced with mood analysis)
 ├── metadata-parser.js              # ID3 tag reading
 ├── vtt-parser.js                   # Lyrics parsing
 ├── error-recovery.js               # Error handling
@@ -443,7 +471,7 @@ Drag music files onto page
 ├── config-constants.js             # App configuration
 │
 ├── Smart Playlists:
-├── music-analyzer.js               # Audio analysis (BPM, energy, mood)
+├── music-analyzer.js               # Audio analysis (BPM, energy, mood) with enhanced detection
 ├── smart-playlist-generator.js     # AI playlist generation
 │
 ├── UI Enhancements:
@@ -470,8 +498,18 @@ Drag music files onto page
 
 ## 🆕 What's New
 
-### Latest Features (v3.0)
-- ✨ **Smart Playlist Generator**: AI-powered playlist creation with 8 templates
+### Latest Features (v3.1)
+
+#### 🎯 Enhanced Mood Detection & Visualizer Integration
+- **🆕 Enhanced Mood Detection**: Now analyzes tempo (BPM) alongside energy and spectral brightness
+- **🆕 5 Accurate Mood Classifications**: Energetic, Calm, Bright, Dark, Neutral with better thresholds
+- **🆕 Mood-Based Visualizer Colors**: Visualizer adapts color schemes based on track mood
+- **🆕 BPM-Synced Visual Effects**: Visualizer pulses synchronize with track BPM
+- **🆕 Energy-Modulated Animations**: Animation intensity scales with track energy levels
+- **🆕 Improved Classification Logic**: Overlapping ranges and fallback systems for better accuracy
+- **🆕 Tempo-Aware Mood Analysis**: Fast tracks (130+ BPM) more likely to be "energetic", slow tracks (<90 BPM) more likely "calm"
+
+#### ✨ Other New Features
 - 🎤 **Automatic Lyrics Fetcher**: Standalone tool for bulk lyrics download
 - 🎨 **Custom Background System**: Upload images or use URLs
 - 📱 **Enhanced Mobile Experience**: Haptic feedback, pull-to-refresh, gesture indicators
@@ -535,8 +573,6 @@ Built with ❤️ for music lovers who want complete control over their listenin
 
 Found a bug? Have a feature request?
 
-- 🐛 [Report Issues](https://github.com/your-username/your-repo/issues)
-- 💡 [Request Features](https://github.com/your-username/your-repo/discussions)
 - 📧 Email: pieredino@gmail.com
 
 **Common Issues:**
@@ -545,6 +581,7 @@ Found a bug? Have a feature request?
 - **Lyrics not showing**: Ensure VTT filename matches audio exactly
 - **PiP not working**: Use Chrome/Edge, try refreshing page
 - **Slow performance**: Try Compact/Mini mode
+- **🆕 Mood detection issues**: Clear analysis cache (`musicAnalysisCache` in localStorage) after updates
 
 ---
 
@@ -557,6 +594,9 @@ Found a bug? Have a feature request?
 - [ ] Radio streaming support
 - [ ] Wrapped-Like Listening Reports
 - [ ] More smart playlist templates
+- [ ] Advanced mood detection with machine learning
+- [ ] Custom visualizer color themes
+- [ ] Crossfade between tracks
 
 ---
 
@@ -569,6 +609,8 @@ If you like this project:
 - 💖 Contribute improvements
 
 ---
+
+*"Impossible is a social construct. Anything is possible if you don't know it shouldn't be."*
 
 **Enjoy your music! 🎵🎧🎶**
 
