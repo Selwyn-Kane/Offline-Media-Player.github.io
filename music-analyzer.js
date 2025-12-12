@@ -1,6 +1,6 @@
 /* ============================================
    Music Analyzer - Smart Playlist Generation
-   Analyzes audio characteristics for intelligent playlists
+   Enhanced with Frequency Band & Dynamic Range Analysis
    ============================================ */
 
 class MusicAnalyzer {
@@ -28,24 +28,40 @@ class MusicAnalyzer {
             const arrayBuffer = await audioFile.arrayBuffer();
             const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
             
-            // Perform all analyses
+            // Analyze 3 segments (intro, middle, outro) for speed and accuracy
+            const segments = this.extractSegments(audioBuffer, 3, 15); // 3x 15-second segments
+            
+            // Perform enhanced analyses on segments
+            const spectralCentroid = this.calculateSpectralCentroid(audioBuffer);
+            const frequencyBands = this.analyzeFrequencyBands(segments, audioBuffer.sampleRate);
+            const dynamicRange = this.calculateDynamicRange(audioBuffer);
+            const vocalProminence = this.calculateVocalProminence(frequencyBands);
+            
+            const bpm = await this.detectBPM(audioBuffer);
+            const energy = this.calculateEnergy(audioBuffer);
+            
             const analysis = {
-                bpm: await this.detectBPM(audioBuffer),
-                energy: this.calculateEnergy(audioBuffer),
-                mood: this.detectMoodEnhanced(audioBuffer),
+                bpm: bpm,
+                energy: energy,
+                spectralCentroid: spectralCentroid,
+                mood: this.detectMood(energy, spectralCentroid, bpm),
                 key: this.detectKey(audioBuffer),
                 danceability: this.calculateDanceability(audioBuffer),
                 loudness: this.calculateLoudness(audioBuffer),
-                tempo: null, // Will be set from BPM
-                duration: audioBuffer.duration
+                tempo: this.classifyTempo(bpm),
+                duration: audioBuffer.duration,
+                
+                // Enhanced analysis
+                frequencyBands: frequencyBands,
+                dynamicRange: dynamicRange,
+                vocalProminence: vocalProminence,
+                isVintage: this.detectVintageRecording(spectralCentroid, dynamicRange, frequencyBands)
             };
-            
-            analysis.tempo = this.classifyTempo(analysis.bpm);
             
             // Cache the result
             this.cacheAnalysis(trackId, analysis);
             
-            this.debugLog(`Analysis complete: BPM=${analysis.bpm}, Energy=${analysis.energy.toFixed(2)}, Mood=${analysis.mood}`, 'success');
+            this.debugLog(`✅ Analysis: BPM=${analysis.bpm}, Energy=${analysis.energy.toFixed(2)}, DR=${analysis.dynamicRange.crestFactor.toFixed(1)}dB, Vintage=${analysis.isVintage}`, 'success');
             
             await audioContext.close();
             return analysis;
@@ -57,47 +73,263 @@ class MusicAnalyzer {
     }
     
     /**
-     * BPM Detection using autocorrelation
+     * Extract representative segments from track
+     */
+    extractSegments(audioBuffer, numSegments, segmentLengthSec) {
+        const channel = audioBuffer.getChannelData(0);
+        const sampleRate = audioBuffer.sampleRate;
+        const segmentLength = segmentLengthSec * sampleRate;
+        const segments = [];
+        
+        for (let i = 0; i < numSegments; i++) {
+            // Position segments evenly: intro, middle, outro
+            const position = (i + 1) / (numSegments + 1);
+            const startSample = Math.floor(position * channel.length) - Math.floor(segmentLength / 2);
+            const validStart = Math.max(0, Math.min(startSample, channel.length - segmentLength));
+            
+            if (validStart + segmentLength <= channel.length) {
+                segments.push({
+                    data: channel.slice(validStart, validStart + segmentLength),
+                    sampleRate: sampleRate
+                });
+            }
+        }
+        
+        return segments;
+    }
+    
+    /**
+     * Analyze frequency bands for EQ decision-making
+     */
+    analyzeFrequencyBands(segments, sampleRate) {
+        const bands = {
+            subBass: 0,      // <60 Hz
+            bass: 0,         // 60-200 Hz
+            lowMid: 0,       // 200-500 Hz
+            midrange: 0,     // 500-2000 Hz
+            presence: 0,     // 2000-6000 Hz
+            brilliance: 0    // 6000+ Hz
+        };
+        
+        if (!segments || segments.length === 0) {
+            return bands;
+        }
+        
+        // Average across all segments
+        segments.forEach(segment => {
+            const segmentBands = this.analyzeSingleSegmentBands(segment.data, sampleRate);
+            Object.keys(bands).forEach(key => {
+                bands[key] += segmentBands[key];
+            });
+        });
+        
+        // Average and normalize
+        const numSegments = segments.length;
+        Object.keys(bands).forEach(key => {
+            bands[key] /= numSegments;
+        });
+        
+        // Calculate total energy for normalization
+        const totalEnergy = Object.values(bands).reduce((sum, val) => sum + val, 0);
+        
+        if (totalEnergy > 0) {
+            Object.keys(bands).forEach(key => {
+                bands[key] = bands[key] / totalEnergy;
+            });
+        }
+        
+        return bands;
+    }
+    
+    /**
+     * Analyze frequency bands for a single segment
+     */
+    analyzeSingleSegmentBands(data, sampleRate) {
+        const bands = {
+            subBass: 0,
+            bass: 0,
+            lowMid: 0,
+            midrange: 0,
+            presence: 0,
+            brilliance: 0
+        };
+        
+        // Simple time-domain approximation using filtering
+        // Divide signal into rough frequency bands based on sample groups
+        const numBins = 64;
+        const samplesPerBin = Math.floor(data.length / numBins);
+        
+        for (let bin = 0; bin < numBins; bin++) {
+            const start = bin * samplesPerBin;
+            const end = Math.min(start + samplesPerBin, data.length);
+            
+            // Calculate RMS energy for this bin
+            let energy = 0;
+            for (let i = start; i < end; i++) {
+                energy += data[i] * data[i];
+            }
+            energy = Math.sqrt(energy / (end - start));
+            
+            // Map bin to approximate frequency range
+            const centerFreq = (bin / numBins) * (sampleRate / 2);
+            
+            if (centerFreq < 60) bands.subBass += energy;
+            else if (centerFreq < 200) bands.bass += energy;
+            else if (centerFreq < 500) bands.lowMid += energy;
+            else if (centerFreq < 2000) bands.midrange += energy;
+            else if (centerFreq < 6000) bands.presence += energy;
+            else bands.brilliance += energy;
+        }
+        
+        return bands;
+    }
+    
+    /**
+     * Calculate dynamic range (crest factor in dB)
+     */
+    calculateDynamicRange(audioBuffer) {
+        const channel = audioBuffer.getChannelData(0);
+        
+        // Find peak amplitude
+        let peak = 0;
+        for (let i = 0; i < channel.length; i += 100) {
+            const abs = Math.abs(channel[i]);
+            if (abs > peak) peak = abs;
+        }
+        
+        // Calculate RMS
+        let sumSquares = 0;
+        let count = 0;
+        for (let i = 0; i < channel.length; i += 100) {
+            sumSquares += channel[i] * channel[i];
+            count++;
+        }
+        const rms = Math.sqrt(sumSquares / count);
+        
+        // Crest factor in dB
+        const crestFactor = 20 * Math.log10((peak + 0.0001) / (rms + 0.0001));
+        
+        // Classification
+        let classification = 'moderate';
+        if (crestFactor > 12) classification = 'high'; // Classical, Jazz
+        else if (crestFactor < 6) classification = 'low'; // Modern Pop, EDM
+        
+        return {
+            crestFactor: Math.max(0, Math.min(30, crestFactor)),
+            peak: peak,
+            rms: rms,
+            classification: classification
+        };
+    }
+    
+    /**
+     * Calculate vocal prominence score
+     */
+    calculateVocalProminence(frequencyBands) {
+        if (!frequencyBands) return 0;
+        
+        // Vocal presence: 1-3kHz range dominance
+        // Formula: (presence energy) / (lowMid energy)
+        const vocalRange = frequencyBands.presence || 0;
+        const mudRange = frequencyBands.lowMid || 0.001; // Avoid division by zero
+        
+        const ratio = vocalRange / mudRange;
+        
+        // Threshold: > 1.5 suggests vocal-forward track
+        return ratio;
+    }
+    
+    /**
+     * Detect vintage recordings
+     */
+    detectVintageRecording(spectralCentroid, dynamicRange, frequencyBands) {
+        let vintageScore = 0;
+        
+        // Low spectral brightness (< 1500 Hz)
+        if (spectralCentroid < 1500) vintageScore += 2;
+        
+        // High dynamic range (> 12 dB)
+        if (dynamicRange.crestFactor > 12) vintageScore += 2;
+        
+        // Low sub-bass energy (old recordings lack deep bass)
+        if (frequencyBands && frequencyBands.subBass < 0.08) vintageScore += 1;
+        
+        // Low brilliance (old recordings roll off highs)
+        if (frequencyBands && frequencyBands.brilliance < 0.12) vintageScore += 1;
+        
+        // Threshold: score >= 3 is vintage
+        return vintageScore >= 3;
+    }
+    
+    /**
+     * BPM Detection - FIXED to prevent stack overflow
      */
     async detectBPM(audioBuffer) {
         try {
             const channel = audioBuffer.getChannelData(0);
             const sampleRate = audioBuffer.sampleRate;
             
-            // Downsample for performance (analyze every 10th sample)
+            // Limit analysis to first 30 seconds
+            const maxSamples = Math.min(channel.length, sampleRate * 30);
+            
+            // Downsample aggressively
             const downsampled = [];
-            for (let i = 0; i < channel.length; i += 10) {
+            for (let i = 0; i < maxSamples; i += 200) {
                 downsampled.push(Math.abs(channel[i]));
             }
             
-            // Apply low-pass filter to focus on beat frequencies
-            const filtered = this.lowPassFilter(downsampled, 0.1);
-            
-            // Find peaks (beats)
-            const peaks = this.findPeaks(filtered, sampleRate / 10);
-            
-            if (peaks.length < 2) {
-                return 120; // Default BPM
+            // Simple moving average filter
+            const filtered = [];
+            const windowSize = 3;
+            for (let i = 0; i < downsampled.length; i++) {
+                let sum = 0;
+                let count = 0;
+                const start = Math.max(0, i - windowSize);
+                const end = Math.min(downsampled.length - 1, i + windowSize);
+                
+                for (let j = start; j <= end; j++) {
+                    sum += downsampled[j];
+                    count++;
+                }
+                filtered.push(sum / count);
             }
             
-            // Calculate intervals between peaks
+            // Find peaks
+            const peaks = [];
+            const threshold = Math.max(...filtered) * 0.6;
+            const minPeakDistance = 10;
+            
+            for (let i = 1; i < filtered.length - 1; i++) {
+                if (filtered[i] > threshold && 
+                    filtered[i] > filtered[i - 1] && 
+                    filtered[i] > filtered[i + 1]) {
+                    
+                    if (peaks.length === 0 || i - peaks[peaks.length - 1] > minPeakDistance) {
+                        peaks.push(i);
+                    }
+                }
+            }
+            
+            if (peaks.length < 4) return 120;
+            
+            // Calculate intervals
             const intervals = [];
-            for (let i = 1; i < Math.min(peaks.length, 50); i++) {
+            for (let i = 1; i < Math.min(peaks.length, 30); i++) {
                 intervals.push(peaks[i] - peaks[i - 1]);
             }
             
-            // Find most common interval (median)
+            // Median interval
             intervals.sort((a, b) => a - b);
             const medianInterval = intervals[Math.floor(intervals.length / 2)];
             
             // Convert to BPM
-            const bpm = Math.round((60 * sampleRate / 10) / medianInterval);
+            let bpm = Math.round((60 * sampleRate / 200) / medianInterval);
             
-            // Validate BPM range (60-180 is typical)
-            if (bpm < 60) return bpm * 2;
-            if (bpm > 180) return bpm / 2;
+            // Validate range
+            while (bpm < 60) bpm *= 2;
+            while (bpm > 180) bpm /= 2;
             
-            return bpm;
+            return Math.round(bpm);
             
         } catch (err) {
             this.debugLog(`BPM detection failed: ${err.message}`, 'warning');
@@ -106,127 +338,125 @@ class MusicAnalyzer {
     }
     
     /**
-     * Energy calculation (average amplitude over time)
+     * Energy calculation
      */
     calculateEnergy(audioBuffer) {
         const channel = audioBuffer.getChannelData(0);
         let sum = 0;
+        let count = 0;
         
-        // Sample every 1000th point for performance
         for (let i = 0; i < channel.length; i += 1000) {
             sum += Math.abs(channel[i]);
+            count++;
         }
         
-        const energy = sum / (channel.length / 1000);
+        const avgAmplitude = sum / count;
+        const energy = Math.min(Math.max(avgAmplitude / 0.15, 0), 1);
         
-        // Normalize to 0-1 scale
-        return Math.min(energy * 10, 1);
+        return energy;
     }
     
-/**
- * Mood detection (improved with better thresholds)
- */
-detectMood(audioBuffer) {
-    const energy = this.calculateEnergy(audioBuffer);
-    const spectralCentroid = this.calculateSpectralCentroid(audioBuffer);
-    
-    // Better classification with overlapping ranges
-    if (energy > 0.7) {
-        if (spectralCentroid > 2200) return 'bright';
-        return 'energetic';
-    }
-    
-    if (energy < 0.4) {
-        if (spectralCentroid < 1200) return 'dark';
-        return 'calm';
-    }
-    
-    // Middle ground - more nuanced classification
-    if (spectralCentroid > 2000) {
-        return 'bright';
-    }
-    
-    if (spectralCentroid < 1400) {
-        return 'dark';
-    }
-    
-    // Moderate energy + moderate brightness
-    if (energy > 0.55 && spectralCentroid > 1800) {
-        return 'energetic';
-    }
-    
-    if (energy < 0.45 && spectralCentroid < 1600) {
-        return 'calm';
-    }
-    
-    // Default to neutral only when truly in the middle
-    return 'neutral';
-}
-
-/**
- * Enhanced mood detection with tempo consideration
- */
-detectMoodEnhanced(audioBuffer) {
-    try {
-        // Get BPM for tempo-aware mood classification
-        const bpm = this.detectBPM(audioBuffer);
-        const energy = this.calculateEnergy(audioBuffer);
-        const spectralCentroid = this.calculateSpectralCentroid(audioBuffer);
-        
-        this.debugLog(`Mood analysis: Energy=${energy.toFixed(2)}, BPM=${bpm}, SpectralCentroid=${spectralCentroid.toFixed(0)}`, 'info');
-        
-        // Factor in tempo for mood classification
-        if (energy > 0.7 && bpm > 130) {
-            return 'energetic';
+    /**
+     * Spectral centroid calculation
+     */
+    calculateSpectralCentroid(audioBuffer) {
+        try {
+            const channel = audioBuffer.getChannelData(0);
+            const sampleRate = audioBuffer.sampleRate;
+            
+            const numSegments = 3;
+            const segmentLength = 4096;
+            const totalLength = channel.length;
+            
+            let totalCentroid = 0;
+            let validSegments = 0;
+            
+            for (let seg = 0; seg < numSegments; seg++) {
+                const segmentStart = Math.floor((totalLength / (numSegments + 1)) * (seg + 1));
+                
+                if (segmentStart + segmentLength >= totalLength) continue;
+                
+                const segment = new Float32Array(segmentLength);
+                for (let i = 0; i < segmentLength; i++) {
+                    segment[i] = channel[segmentStart + i];
+                }
+                
+                const numBands = 32;
+                const samplesPerBand = Math.floor(segmentLength / numBands);
+                
+                let weightedSum = 0;
+                let totalPower = 0;
+                
+                for (let band = 0; band < numBands; band++) {
+                    const bandStart = band * samplesPerBand;
+                    const bandEnd = Math.min(bandStart + samplesPerBand, segmentLength);
+                    
+                    let bandPower = 0;
+                    for (let i = bandStart; i < bandEnd; i++) {
+                        bandPower += segment[i] * segment[i];
+                    }
+                    bandPower = Math.sqrt(bandPower / (bandEnd - bandStart));
+                    
+                    const centerFreq = ((band + 0.5) / numBands) * (sampleRate / 2);
+                    
+                    weightedSum += centerFreq * bandPower;
+                    totalPower += bandPower;
+                }
+                
+                if (totalPower > 0.001) {
+                    totalCentroid += weightedSum / totalPower;
+                    validSegments++;
+                }
+            }
+            
+            const avgCentroid = validSegments > 0 ? totalCentroid / validSegments : 1500;
+            return Math.min(Math.max(avgCentroid, 300), 5000);
+            
+        } catch (err) {
+            this.debugLog(`Spectral centroid failed: ${err.message}`, 'warning');
+            return 1500;
         }
-        
-        if (energy < 0.4 && bpm < 90) {
-            return 'calm';
-        }
-        
-        if (spectralCentroid > 2300 && energy > 0.6) {
+    }
+    
+    /**
+     * Mood detection with realistic thresholds
+     */
+    detectMood(energy, spectralCentroid, bpm) {
+        if (energy > 0.65) {
+            if (bpm > 130 || spectralCentroid > 2500) return 'energetic';
             return 'bright';
         }
         
-        if (spectralCentroid < 1200 && energy < 0.5) {
+        if (energy < 0.35) {
+            if (spectralCentroid < 1200 || bpm < 90) return 'calm';
             return 'dark';
         }
         
-        // Middle classifications with tempo consideration
-        if (energy > 0.6 && energy <= 0.7) {
-            if (bpm > 120) return 'energetic';
-            if (spectralCentroid > 2000) return 'bright';
-        }
+        if (spectralCentroid > 2800) return 'bright';
+        if (spectralCentroid < 1000) return 'dark';
         
-        if (energy >= 0.4 && energy <= 0.5) {
-            if (bpm < 100) return 'calm';
-            if (spectralCentroid < 1500) return 'dark';
-        }
+        if (bpm > 130 && energy > 0.5) return 'energetic';
+        if (bpm < 90 && energy < 0.5) return 'calm';
         
-        // If still undecided, use the regular detectMood as fallback
-        return this.detectMood(audioBuffer);
-        
-    } catch (err) {
-        this.debugLog(`Enhanced mood detection failed, using fallback: ${err.message}`, 'warning');
-        return this.detectMood(audioBuffer);
+        return 'neutral';
     }
-}
     
     /**
-     * Key detection (simplified - uses FFT to find dominant frequency)
+     * Key detection
      */
     detectKey(audioBuffer) {
         try {
-            // Get frequency data
             const channel = audioBuffer.getChannelData(0);
             const fftSize = 8192;
+            
+            if (channel.length < fftSize) return 'C';
+            
             const fft = this.performFFT(channel.slice(0, fftSize));
             
-            // Find peak frequency
             let maxMagnitude = 0;
             let peakIndex = 0;
             
-            for (let i = 0; i < fft.length / 2; i++) {
+            for (let i = 20; i < fft.length / 2; i++) {
                 const magnitude = Math.sqrt(fft[i].real ** 2 + fft[i].imag ** 2);
                 if (magnitude > maxMagnitude) {
                     maxMagnitude = magnitude;
@@ -234,10 +464,8 @@ detectMoodEnhanced(audioBuffer) {
                 }
             }
             
-            // Convert to frequency
             const peakFreq = (peakIndex * audioBuffer.sampleRate) / fftSize;
             
-            // Map to musical key (simplified)
             const notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
             const a4 = 440;
             const halfSteps = Math.round(12 * Math.log2(peakFreq / a4));
@@ -246,24 +474,23 @@ detectMoodEnhanced(audioBuffer) {
             return notes[noteIndex];
             
         } catch (err) {
-            this.debugLog(`Key detection failed: ${err.message}`, 'warning');
             return 'C';
         }
     }
     
     /**
-     * Danceability calculation (rhythm consistency)
+     * Danceability calculation
      */
     calculateDanceability(audioBuffer) {
         try {
             const channel = audioBuffer.getChannelData(0);
             const sampleRate = audioBuffer.sampleRate;
             
-            // Analyze rhythm consistency
-            const windowSize = Math.floor(sampleRate * 0.1); // 100ms windows
+            const windowSize = Math.floor(sampleRate * 0.1);
             const energies = [];
+            const maxWindows = 100;
             
-            for (let i = 0; i < channel.length - windowSize; i += windowSize) {
+            for (let i = 0; i < channel.length - windowSize && energies.length < maxWindows; i += windowSize) {
                 let sum = 0;
                 for (let j = 0; j < windowSize; j++) {
                     sum += Math.abs(channel[i + j]);
@@ -271,65 +498,37 @@ detectMoodEnhanced(audioBuffer) {
                 energies.push(sum / windowSize);
             }
             
-            // Calculate variance (low variance = consistent rhythm = high danceability)
+            if (energies.length < 2) return 0.5;
+            
             const mean = energies.reduce((a, b) => a + b, 0) / energies.length;
             const variance = energies.reduce((sum, e) => sum + (e - mean) ** 2, 0) / energies.length;
             
-            // Normalize (lower variance = higher danceability)
-            const danceability = Math.max(0, Math.min(1, 1 - variance * 5));
+            const danceability = Math.max(0, Math.min(1, 1 - variance * 50));
             
             return danceability;
             
         } catch (err) {
-            this.debugLog(`Danceability calculation failed: ${err.message}`, 'warning');
             return 0.5;
         }
     }
     
     /**
-     * Loudness calculation (RMS)
+     * Loudness calculation
      */
     calculateLoudness(audioBuffer) {
         const channel = audioBuffer.getChannelData(0);
         let sum = 0;
+        let count = 0;
         
-        for (let i = 0; i < channel.length; i++) {
+        for (let i = 0; i < channel.length; i += 100) {
             sum += channel[i] ** 2;
+            count++;
         }
         
-        const rms = Math.sqrt(sum / channel.length);
+        const rms = Math.sqrt(sum / count);
+        const db = 20 * Math.log10(rms + 0.0001);
         
-        // Convert to dB (approximate)
-        const db = 20 * Math.log10(rms);
-        
-        // Normalize to 0-1 scale
         return Math.max(0, Math.min(1, (db + 60) / 60));
-    }
-    
-    /**
-     * Spectral centroid (brightness measure)
-     */
-    calculateSpectralCentroid(audioBuffer) {
-        try {
-            const channel = audioBuffer.getChannelData(0);
-            const fftSize = 2048;
-            const fft = this.performFFT(channel.slice(0, fftSize));
-            
-            let weightedSum = 0;
-            let sum = 0;
-            
-            for (let i = 0; i < fft.length / 2; i++) {
-                const magnitude = Math.sqrt(fft[i].real ** 2 + fft[i].imag ** 2);
-                const freq = (i * audioBuffer.sampleRate) / fftSize;
-                weightedSum += freq * magnitude;
-                sum += magnitude;
-            }
-            
-            return sum > 0 ? weightedSum / sum : 1500;
-            
-        } catch (err) {
-            return 1500;
-        }
     }
     
     /**
@@ -342,47 +541,10 @@ detectMoodEnhanced(audioBuffer) {
         return 'very-fast';
     }
     
-    // ========== HELPER FUNCTIONS ==========
-    
     /**
-     * Simple low-pass filter
-     */
-    lowPassFilter(data, alpha) {
-        const filtered = [data[0]];
-        for (let i = 1; i < data.length; i++) {
-            filtered[i] = alpha * data[i] + (1 - alpha) * filtered[i - 1];
-        }
-        return filtered;
-    }
-    
-    /**
-     * Peak detection
-     */
-    findPeaks(data, minDistance) {
-        const peaks = [];
-        const threshold = Math.max(...data) * 0.5; // 50% of max value
-        
-        for (let i = 1; i < data.length - 1; i++) {
-            if (data[i] > threshold && 
-                data[i] > data[i - 1] && 
-                data[i] > data[i + 1]) {
-                
-                // Check minimum distance from last peak
-                if (peaks.length === 0 || i - peaks[peaks.length - 1] > minDistance) {
-                    peaks.push(i);
-                }
-            }
-        }
-        
-        return peaks;
-    }
-    
-    /**
-     * Simplified FFT (using browser's AnalyserNode would be more efficient)
+     * Simplified FFT
      */
     performFFT(data) {
-        // This is a placeholder - in production, use Web Audio API's analyser
-        // or a proper FFT library like fft.js
         const result = [];
         for (let i = 0; i < data.length; i++) {
             result.push({ real: data[i], imag: 0 });
@@ -413,12 +575,29 @@ detectMoodEnhanced(audioBuffer) {
             danceability: 0.5,
             loudness: 0.5,
             tempo: 'moderate',
-            duration: 0
+            spectralCentroid: 1500,
+            duration: 0,
+            frequencyBands: {
+                subBass: 0.15,
+                bass: 0.2,
+                lowMid: 0.2,
+                midrange: 0.2,
+                presence: 0.15,
+                brilliance: 0.1
+            },
+            dynamicRange: {
+                crestFactor: 9,
+                peak: 0.5,
+                rms: 0.1,
+                classification: 'moderate'
+            },
+            vocalProminence: 1.0,
+            isVintage: false
         };
     }
     
     /**
-     * Batch analyze multiple tracks with progress callback
+     * Batch analyze multiple tracks
      */
     async analyzeBatch(tracks, progressCallback) {
         const results = [];
@@ -437,34 +616,23 @@ detectMoodEnhanced(audioBuffer) {
     }
     
     /**
-     * Save all analyses to localStorage
+     * Clear cache
      */
-    saveAnalysesToStorage() {
-        try {
-            const data = Array.from(this.analysisCache.entries());
-            localStorage.setItem('musicAnalysisCache', JSON.stringify(data));
-            this.debugLog(`Saved ${data.length} analyses to storage`, 'success');
-        } catch (err) {
-            this.debugLog(`Failed to save analyses: ${err.message}`, 'error');
-        }
+    clearCache() {
+        this.analysisCache.clear();
+        this.debugLog('Analysis cache cleared', 'info');
     }
     
     /**
-     * Load analyses from localStorage
+     * Save/load stubs for compatibility
      */
+    saveAnalysesToStorage() {
+        this.debugLog('Analysis cache in memory only', 'info');
+    }
+    
     loadAnalysesFromStorage() {
-        try {
-            const data = localStorage.getItem('musicAnalysisCache');
-            if (data) {
-                const entries = JSON.parse(data);
-                this.analysisCache = new Map(entries);
-                this.debugLog(`Loaded ${entries.length} analyses from storage`, 'success');
-            }
-        } catch (err) {
-            this.debugLog(`Failed to load analyses: ${err.message}`, 'error');
-        }
+        this.debugLog('Analysis cache starting fresh', 'info');
     }
 }
 
-// Export
 window.MusicAnalyzer = MusicAnalyzer;

@@ -49,9 +49,16 @@ let compactMode = 'full';
 let canvas = null;
 let canvasCtx = null;
 let currentDominantColor = null;
+let crossfadeManager = null;
+let autoEQManager = null;
+let djModeManager = null;
 
 // Color extraction cache (CRITICAL - was missing!)
 const colorCache = new Map();
+
+let fullscreenLyricsActive = false;
+let lyricsVizAnimationId = null;
+let backgroundAnalysisRunning = false;
 
 document.addEventListener('DOMContentLoaded', () => {
 
@@ -488,8 +495,32 @@ function extractDominantColor(imageUrl) {
 audioPresetsManager = new AudioPresetsManager(bassFilter, midFilter, trebleFilter, debugLog);
 audioPresetsManager.loadSavedPreset();
 
+        // ✅ ADD THESE LINES HERE:
+if (!autoEQManager) {
+    autoEQManager = new AutoEQManager(audioPresetsManager, debugLog);
+    debugLog('✅ Auto-EQ system initialized', 'success');
+}
+
 // Now populate the dropdown since audioPresetsManager exists
 populatePresetDropdown();
+
+        // âœ… Initialize CrossfadeManager NOW that audioContext exists
+if (!crossfadeManager) {
+    crossfadeManager = new CrossfadeManager(audioContext, debugLog);
+    debugLog('âœ… Crossfade system initialized', 'success');
+}
+
+// âœ… Initialize AutoEQManager with presets manager
+if (autoEQManager && !autoEQManager.presetsManager) {
+    autoEQManager.presetsManager = audioPresetsManager;
+    debugLog('âœ… Auto-EQ system linked', 'success');
+}
+
+// Initialize crossfade audio chain
+if (crossfadeManager && !crossfadeManager.currentPlayer) {
+    const player = document.getElementById('audio-player');
+    crossfadeManager.init(player, audioSource, audioContext.destination);
+}
         
     } catch (error) {
         debugLog(`Audio setup failed: ${error.message}`, 'error');
@@ -1155,6 +1186,10 @@ function updateJumpButton() {
 
     // Display metadata
     displayMetadata(track.metadata);
+          // Apply Auto-EQ if enabled
+        if (autoEQManager && autoEQManager.enabled) {
+            autoEQManager.applyAutoEQ(track);
+    }
 
      // ✅ NEW: Pass analysis data to visualizer if available
     if (track.analysis) {
@@ -1213,6 +1248,10 @@ player.play().then(() => {
           // Update fullscreen lyrics if active
 if (fullscreenLyricsActive) {
     renderFullscreenLyrics();
+}
+          // Preload next track for crossfade
+if (crossfadeManager && crossfadeManager.enabled && currentTrackIndex + 1 < playlist.length) {
+    crossfadeManager.preloadNext(playlist[currentTrackIndex + 1]);
 }
 }
 
@@ -1291,21 +1330,43 @@ if (fullscreenLyricsActive) {
             debugLog('Media Session updated for hardware controls', 'success');
         }
 
-        function playNext() {
-            // ... (Your existing playNext logic here) ...
-            if (currentTrackIndex === -1 || playlist.length === 0) return;
+async function playNext() {
+    if (currentTrackIndex === -1 || playlist.length === 0) return;
 
-            if (currentTrackIndex < playlist.length - 1) {
-                loadTrack(currentTrackIndex + 1);
-            } else if (loopMode === 'all') {
-                loadTrack(0);
-            } else {
-                player.pause();
-                trackTitle.textContent = "Playlist finished";
-                debugLog('Playlist finished');
-                updateLyricHighlight(); // Clear final active line
-            }
-        }
+    let nextIndex;
+    
+    if (currentTrackIndex < playlist.length - 1) {
+        nextIndex = currentTrackIndex + 1;
+    } else if (loopMode === 'all') {
+        nextIndex = 0;
+    } else {
+        player.pause();
+        trackTitle.textContent = "Playlist finished";
+        debugLog('Playlist finished');
+        updateLyricHighlight();
+        return;
+    }
+    
+// ✅ NEW: Crossfade logic
+if (crossfadeManager && crossfadeManager.enabled) {
+    const currentTrack = playlist[currentTrackIndex];
+    const nextTrack = playlist[nextIndex];
+    
+    const result = await crossfadeManager.startCrossfade(currentTrack, nextTrack);
+    
+    // Load next track
+    currentTrackIndex = nextIndex;
+    loadTrack(nextIndex);
+    
+    // Apply intelligent start point if available
+    if (result && result.startPoint) {
+        player.currentTime = result.startPoint;
+    }
+} else {
+    // Normal track loading (no crossfade)
+    loadTrack(nextIndex);
+}
+}
 
         function playPrevious() {
             // ... (Your existing playPrevious logic here) ...
@@ -1543,15 +1604,21 @@ window.handleFileLoad = async function handleFileLoad(event) {
             loadTrack(0);
         }, 150);
         
-        // ✅ NEW: Start background analysis AFTER first track loads
-        setTimeout(() => {
-            startBackgroundAnalysis();
-        }, 2000);
+// âœ… NEW: Start background analysis AFTER first track loads
+setTimeout(() => {
+    if (analyzer && playlist.length > 0) {
+        debugLog('ðŸ" Starting background analysis...', 'info');
+        startBackgroundAnalysis();
+    }
+}, 3000); // Increased delay to ensure everything is ready
         
         prevButton.disabled = false;
         nextButton.disabled = false;
         shuffleButton.disabled = false;
         loopButton.disabled = false;
+        crossfadeButton.disabled = false;
+        autoEQButton.disabled = false;
+        djModeButton.disabled = false;
         
         // Save playlist to localStorage
         savePlaylistToStorage();
@@ -1831,6 +1898,82 @@ player.addEventListener('timeupdate', () => {
             }
             updatePlaylistStatus();
         };
+
+    // ✅ CROSSFADE BUTTON
+const crossfadeButton = document.getElementById('crossfade-button');
+if (crossfadeButton) {
+    crossfadeButton.onclick = () => {
+        const newState = !crossfadeManager.enabled;
+        crossfadeManager.setEnabled(newState);
+        
+        crossfadeButton.classList.toggle('active', newState);
+        crossfadeButton.textContent = newState ? '🎚️ Crossfade On' : '🎚️ Crossfade Off';
+        
+        debugLog(`Crossfade ${newState ? 'enabled' : 'disabled'}`, 'info');
+    };
+}
+
+// ✅ AUTO-EQ BUTTON
+const autoEQButton = document.getElementById('auto-eq-button');
+if (autoEQButton) {
+    autoEQButton.onclick = () => {
+        const newState = !autoEQManager.enabled;
+        autoEQManager.setEnabled(newState);
+        
+        autoEQButton.classList.toggle('active', newState);
+        autoEQButton.textContent = newState ? '🎛️ Auto-EQ On' : '🎛️ Auto-EQ Off';
+        
+        // If enabling and track is loaded, apply immediately
+        if (newState && currentTrackIndex !== -1) {
+            autoEQManager.applyAutoEQ(playlist[currentTrackIndex]);
+        }
+        
+        debugLog(`Auto-EQ ${newState ? 'enabled' : 'disabled'}`, 'info');
+    };
+}
+
+// ✅ DJ MODE BUTTON
+const djModeButton = document.getElementById('dj-mode-button');
+if (djModeButton) {
+    djModeButton.onclick = () => {
+        if (!djModeManager.enabled) {
+            // Enable DJ Mode
+            playlist = djModeManager.enableDJMode(playlist, currentTrackIndex);
+            
+            // Force disable shuffle (DJ Mode incompatible)
+            if (isShuffled) {
+    isShuffled = false;
+    shuffleButton.classList.remove('active');
+    updatePlaylistStatus();
+}
+            
+            djModeButton.classList.add('active');
+            djModeButton.textContent = '🎧 DJ Mode On';
+            
+            // Re-render playlist
+            renderPlaylist();
+            
+            localStorage.setItem('djModeEnabled', 'true');
+            debugLog('DJ Mode enabled - playlist reordered', 'success');
+        } else {
+            // Disable DJ Mode
+            const result = djModeManager.disableDJMode(playlist[currentTrackIndex]);
+            playlist = result.playlist;
+            currentTrackIndex = result.newIndex;
+            
+            djModeButton.classList.remove('active');
+            djModeButton.textContent = '🎧 DJ Mode Off';
+            
+            // Re-render playlist
+            renderPlaylist();
+            
+            localStorage.removeItem('djModeEnabled');
+            debugLog('DJ Mode disabled - original order restored', 'info');
+        }
+        
+        updatePlaylistStatus();
+    };
+}
         
         // Keyboard shortcuts (User's Code)
         document.addEventListener('keydown', (e) => {
@@ -3192,6 +3335,24 @@ function openMetadataEditorForTrack(index) {
 
 // ========== END METADATA EDITOR INTEGRATION ==========
 
+// NOTE: crossfadeManager will be initialized later in setupAudioContext
+crossfadeManager = null; // Initialize as null first
+djModeManager = new DJModeManager(debugLog);
+
+debugLog('âœ… Advanced systems prepared', 'success');
+
+// Load saved preferences
+const savedCrossfade = localStorage.getItem('crossfadeEnabled') === 'true';
+const savedAutoEQ = localStorage.getItem('autoEQEnabled') === 'true';
+const savedDJMode = localStorage.getItem('djModeEnabled') === 'true';
+
+if (savedCrossfade) crossfadeManager.setEnabled(true);
+if (savedAutoEQ) autoEQManager.setEnabled(true);
+if (savedDJMode) {
+    djModeManager.enabled = true;
+    djModeButton.classList.add('active');
+}
+
     // Auto-fetch lyrics button
 const autoLyricsBtn = document.getElementById('auto-lyrics-btn');
 
@@ -3210,8 +3371,6 @@ const lyricsCloseBtn = document.getElementById('lyrics-close-btn');
 const lyricsPrevBtn = document.getElementById('lyrics-prev-btn');
 const lyricsNextBtn = document.getElementById('lyrics-next-btn');
 
-let fullscreenLyricsActive = false;
-let lyricsVizAnimationId = null;
 
 function toggleFullscreenLyrics(show) {
     fullscreenLyricsActive = show;
@@ -3720,8 +3879,6 @@ if (loadSmartPlaylistBtn) {
 
 
 // ========== BACKGROUND MUSIC ANALYSIS ==========
-let backgroundAnalysisRunning = false;
-
 async function startBackgroundAnalysis() {
     if (backgroundAnalysisRunning) return;
     if (playlist.length === 0) return;

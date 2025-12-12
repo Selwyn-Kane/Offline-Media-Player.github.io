@@ -2181,3 +2181,12 @@ button.success {
     }
 }
 /* ========== END SMART PLAYLIST MODAL ========== */
+button.active {
+    background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+    border-color: #28a745;
+    box-shadow: 0 4px 15px rgba(40, 167, 69, 0.3);
+}
+
+button.active:hover {
+    background: linear-gradient(135deg, #218838 0%, #1ba87d 100%);
+}
