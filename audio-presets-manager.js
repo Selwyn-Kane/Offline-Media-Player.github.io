@@ -28,7 +28,7 @@ class AudioPresetsManager {
             // Target: Add missing low-end punch without muddying
             bassBoost: {
                 name: 'Bass Boost',
-                bass: 4,        // Strong but controlled sub-bass lift
+                bass: 3,        // Strong but controlled sub-bass lift
                 mid: -1,        // Slight mid scoop to prevent mud
                 treble: 0,      // Keep highs clean
                 description: 'Enhanced deep bass for modern tracks',
@@ -72,7 +72,7 @@ class AudioPresetsManager {
             // Target: Punchy bass, scooped mids, present highs
             rock: {
                 name: 'Rock',
-                bass: 5,        // Upper bass punch for kick/bass guitar
+                bass: 4,        // Upper bass punch for kick/bass guitar
                 mid: 0,         // Slight scoop would be -1, but 0 for safety
                 treble: 4,      // Presence for guitars and cymbals
                 description: 'Punchy and aggressive',
@@ -94,7 +94,7 @@ class AudioPresetsManager {
             // Target: Strong sub-bass, clean highs, scooped mids
             electronic: {
                 name: 'Electronic',
-                bass: 6,        // Strong sub-bass shelf
+                bass: 4,        // Strong sub-bass shelf
                 mid: -2,        // Clear mid scoop for clean mix
                 treble: 5,      // Crisp, clean high-end
                 description: 'Deep bass with crisp highs',
