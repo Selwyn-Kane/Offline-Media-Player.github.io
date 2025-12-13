@@ -1,170 +1,328 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-   
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#000000">
     <title>Ultimate Offline Playlist Player</title>
-     <!-- ADD THESE LINES TO YOUR <head> -->
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="theme-color" content="#000000">
-<link rel="manifest" href="manifest.webmanifest">
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="icon" type="image/png" sizes="32x32" href="icon-192.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="icon-192.png">
+    <link rel="shortcut icon" href="icon-192.png">
+    <link rel="apple-touch-icon" href="icon-192.png">
     
     <script src="gh-pages-config.js"></script>
-    <!-- Platform detection (must load before other scripts) -->
- <script src="chromeOS-detector.js"></script>
- <script src="config-constants.js"></script>
-    <!-- DESKTOP BROWSER ICONS - ADD TO <head> -->
-<link rel="icon" type="image/png" sizes="32x32" href="icon-192.png">
-<link rel="icon" type="image/png" sizes="16x16" href="icon-192.png">
-<link rel="shortcut icon" href="icon-192.png">
-<link rel="apple-touch-icon" href="icon-192.png">
+    <script src="chromeOS-detector.js"></script>
+    <script src="config-constants.js"></script>
     
-    <!-- Link to external CSS -->
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div id="drop-zone">DROP FILES TO LOAD</div>
-    <h1>🎵 Ultimate Local Music Player</h1>
     <div id="mode-indicator"></div>
     
-    <div id="metadata-container">
-        <button class="sticky-close" style="display: none;">✕</button>
-        <div id="cover-art-container">
-            <img id="cover-art" alt="Album Art">
-            <div id="cover-placeholder">🎵</div>
-        </div>
-        <div id="info-details">
-            <div class="label">Now Playing</div>
-            <div class="value" id="track-title">No track loaded</div>
-            <div class="label">Artist</div>
-            <div class="value" id="track-artist">--</div>
-            <div class="label">Album</div>
-            <div class="value" id="track-album">--</div>
-        </div>
-    </div>
-    
-    <div id="playlist-status">Load music files to begin</div>
-
-    <div id="controls"> 
-        <button id="load-button">📂 Load Music & Lyrics</button>
-        <button id="folder-button">📁 Select Music Folder</button>
-        <button id="clear-folder-button" style="display: none;">🗑️ Forget Folder</button>
-        <button id="smart-playlist-button" disabled>🧠 Smart Playlists</button>
-        <label style="display: none; color: #fff; font-size: 14px; margin-left: 10px;" id="auto-reload-label">
-        <input type="checkbox" id="auto-reload-check" checked>
-        <!--Auto-reload folder-->
-        </label>
-        <button id="prev-button" disabled>⏮️ Previous</button>
-        <button id="next-button" disabled>⏭️ Next</button>
-        <button id="shuffle-button" disabled>🔀 Shuffle</button>
-        <button id="loop-button" disabled>🔁 Loop Off</button>
-        <button id="crossfade-button" disabled>🎚️ Crossfade Off</button>
-        <button id="auto-eq-button" disabled>🎛️ Auto-EQ Off</button>
-        <button id="dj-mode-button" disabled>🎧 DJ Mode</button>
-        <button id="debug-toggle">🐛 Debug</button>
-        <button id="compact-toggle">📄 Full View</button>
-        <button id="pip-toggle">📺 Float</button>
-        <button id="sticky-toggle">📌 Sticky Off</button>
-        <button id="fullscreen-lyrics-toggle">🎤 Fullscreen Lyrics</button>
-        <button id="fullscreen-viz-toggle">🌌 Fullscreen Visualizer</button>
-        <button id="custom-bg-button">🎨 Background</button>
-        <button id="auto-lyrics-btn">🎤 Auto-Fetch Lyrics</button>
-        <button id="deep-analysis-btn">🔍 Deep Analysis Tool</button>
-    </div>
-
-    <div id="volume-control">
-        <span id="volume-icon">🔊</span>
-        <input type="range" id="volume-slider" min="0" max="1" step="0.01" value="1">
-        <span id="volume-percentage">100%</span>
-    </div>
-
-    <div id="equalizer-control">
-        <div class="eq-header">
-            <span class="eq-title">🎛️ Equalizer</span>
-            <select id="eq-preset-select" class="eq-preset-dropdown">
-            <option value="">Select Preset...</option>
-            </select>
-            <button id="eq-reset" class="eq-reset-btn">Reset</button>
-            <button id="eq-reset" class="eq-reset-btn">Reset</button>
-        </div>
-        <div class="eq-bands">
-            <div class="eq-band">
-                <label class="eq-label">Bass</label>
-                <input type="range" id="eq-bass" class="eq-slider" min="-12" max="12" step="0.5" value="0" orient="vertical">
-                <span class="eq-value" id="bass-value">0 dB</span>
+    <!-- Collapsible Sidebar -->
+    <div id="sidebar" class="sidebar collapsed">
+        <button id="sidebar-toggle" class="sidebar-toggle">☰</button>
+        
+        <div class="sidebar-content">
+            <div class="sidebar-item">
+                <button id="smart-playlist-button" class="sidebar-btn" data-icon="🧠" data-label="Smart Playlists" disabled>
+                    <span class="sidebar-icon">🧠</span>
+                    <span class="sidebar-label">Smart Playlists</span>
+                </button>
             </div>
-            <div class="eq-band">
-                <label class="eq-label">Mid</label>
-                <input type="range" id="eq-mid" class="eq-slider" min="-12" max="12" step="0.5" value="0" orient="vertical">
-                <span class="eq-value" id="mid-value">0 dB</span>
+            
+            <div class="sidebar-item">
+                <button id="crossfade-button" class="sidebar-btn" data-icon="🎚️" data-label="Crossfade" disabled>
+                    <span class="sidebar-icon">🎚️</span>
+                    <span class="sidebar-label">Crossfade Off</span>
+                </button>
             </div>
-            <div class="eq-band">
-                <label class="eq-label">Treble</label>
-                <input type="range" id="eq-treble" class="eq-slider" min="-12" max="12" step="0.5" value="0" orient="vertical">
-                <span class="eq-value" id="treble-value">0 dB</span>
+            
+            <div class="sidebar-item">
+                <button id="auto-eq-button" class="sidebar-btn" data-icon="🎛️" data-label="Auto-EQ" disabled>
+                    <span class="sidebar-icon">🎛️</span>
+                    <span class="sidebar-label">Auto-EQ Off</span>
+                </button>
+            </div>
+            
+            <div class="sidebar-item">
+                <button id="dj-mode-button" class="sidebar-btn" data-icon="🎧" data-label="DJ Mode" disabled>
+                    <span class="sidebar-icon">🎧</span>
+                    <span class="sidebar-label">DJ Mode</span>
+                </button>
+            </div>
+            
+            <div class="sidebar-item">
+                <button id="debug-toggle" class="sidebar-btn" data-icon="🛠" data-label="Debug">
+                    <span class="sidebar-icon">🛠</span>
+                    <span class="sidebar-label">Debug</span>
+                </button>
+            </div>
+            
+            <div class="sidebar-item">
+                <button id="compact-toggle" class="sidebar-btn" data-icon="🔄" data-label="View">
+                    <span class="sidebar-icon">🔄</span>
+                    <span class="sidebar-label">Full View</span>
+                </button>
+            </div>
+            
+            <div class="sidebar-item">
+                <button id="pip-toggle" class="sidebar-btn" data-icon="📺" data-label="Float">
+                    <span class="sidebar-icon">📺</span>
+                    <span class="sidebar-label">Float</span>
+                </button>
+            </div>
+            
+            <div class="sidebar-item">
+                <button id="sticky-toggle" class="sidebar-btn" data-icon="📌" data-label="Sticky">
+                    <span class="sidebar-icon">📌</span>
+                    <span class="sidebar-label">Sticky Off</span>
+                </button>
+            </div>
+            
+            <div class="sidebar-item">
+                <button id="fullscreen-lyrics-toggle" class="sidebar-btn" data-icon="🎤" data-label="Lyrics">
+                    <span class="sidebar-icon">🎤</span>
+                    <span class="sidebar-label">Fullscreen Lyrics</span>
+                </button>
+            </div>
+            
+            <div class="sidebar-item">
+                <button id="fullscreen-viz-toggle" class="sidebar-btn" data-icon="🌌" data-label="Visualizer">
+                    <span class="sidebar-icon">🌌</span>
+                    <span class="sidebar-label">Fullscreen Visualizer</span>
+                </button>
+            </div>
+            
+            <div class="sidebar-item">
+                <button id="custom-bg-button" class="sidebar-btn" data-icon="🎨" data-label="Background">
+                    <span class="sidebar-icon">🎨</span>
+                    <span class="sidebar-label">Background</span>
+                </button>
+            </div>
+            
+            <div class="sidebar-item">
+                <button id="auto-lyrics-btn" class="sidebar-btn" data-icon="🎤" data-label="Auto Lyrics">
+                    <span class="sidebar-icon">🎤</span>
+                    <span class="sidebar-label">Auto-Fetch Lyrics</span>
+                </button>
+            </div>
+            
+            <div class="sidebar-item">
+                <button id="deep-analysis-btn" class="sidebar-btn" data-icon="🔍" data-label="Analysis">
+                    <span class="sidebar-icon">🔍</span>
+                    <span class="sidebar-label">Deep Analysis Tool</span>
+                </button>
             </div>
         </div>
     </div>
     
-    <div id="custom-progress-container">
-        <div id="progress-bar"></div>
-    </div>
-    <div id="time-display">
-        <span id="current-time">0:00</span>
-        <span id="duration">0:00</span>
-    </div>
-
-    <div id="lyrics-display">
-        <button id="export-lyrics-button" disabled>📥 Export</button>
-        <div class="lyric-line">Lyrics will appear here when a track is loaded.</div>
-    </div>
-
-    <div id="player-wrapper">
-        <canvas id="visualizer"></canvas>
-        <video id="audio-player" preload="metadata" crossorigin="anonymous"></video> 
+    <!-- Main Content -->
+    <div id="main-content">
+        <h1>🎵 Ultimate Local Music Player</h1>
+        
+        <div id="metadata-container">
+            <button class="sticky-close" style="display: none;">✕</button>
+            <div id="cover-art-container">
+                <img id="cover-art" alt="Album Art">
+                <div id="cover-placeholder">🎵</div>
+            </div>
+            <div id="info-details">
+                <div class="label">Now Playing</div>
+                <div class="value" id="track-title">No track loaded</div>
+                <div class="label">Artist</div>
+                <div class="value" id="track-artist">--</div>
+                <div class="label">Album</div>
+                <div class="value" id="track-album">--</div>
+            </div>
+        </div>
+        
+        <!-- Progress Bar -->
+        <div id="custom-progress-container">
+            <div id="progress-bar"></div>
+        </div>
+        <div id="time-display">
+            <span id="current-time">0:00</span>
+            <span id="duration">0:00</span>
+        </div>
+        
+        <!-- Main Playback Controls -->
+        <div id="playback-controls">
+            <button id="shuffle-button" class="control-btn" disabled>
+                <span class="control-icon">🔀</span>
+            </button>
+            <button id="prev-button" class="control-btn" disabled>
+                <span class="control-icon">⏮️</span>
+            </button>
+            <button id="play-pause-button" class="control-btn control-btn-play">
+                <span class="control-icon">▶️</span>
+            </button>
+            <button id="next-button" class="control-btn" disabled>
+                <span class="control-icon">⏭️</span>
+            </button>
+            <button id="loop-button" class="control-btn" disabled>
+                <span class="control-icon">🔁</span>
+                <span class="control-label">Loop Off</span>
+            </button>
+        </div>
+        
+        <!-- File Loading Controls -->
+        <div id="file-controls">
+            <button id="load-button">📂 Load Music & Lyrics</button>
+            <button id="folder-button">📁 Select Music Folder</button>
+            <label id="auto-reload-label" style="display: none;">
+                <input type="checkbox" id="auto-reload-check" checked>
+            </label>
+            <button id="clear-folder-button" style="display: none;">🗑️ Forget Folder</button>
+        </div>
+        
+        <div id="playlist-status">Load music files to begin</div>
+        
+        <!-- Volume Control -->
+        <div id="volume-control">
+            <span id="volume-icon">🔊</span>
+            <input type="range" id="volume-slider" min="0" max="1" step="0.01" value="1">
+            <span id="volume-percentage">100%</span>
+        </div>
+        
+        <!-- Equalizer -->
+        <div id="equalizer-control">
+            <div class="eq-header">
+                <span class="eq-title">🎛️ Equalizer</span>
+                <select id="eq-preset-select" class="eq-preset-dropdown">
+                    <option value="">Select Preset...</option>
+                </select>
+                <button id="eq-reset" class="eq-reset-btn">Reset</button>
+            </div>
+            <div class="eq-bands">
+                <div class="eq-band">
+                    <label class="eq-label">Bass</label>
+                    <input type="range" id="eq-bass" class="eq-slider" min="-12" max="12" step="0.5" value="0" orient="vertical">
+                    <span class="eq-value" id="bass-value">0 dB</span>
+                </div>
+                <div class="eq-band">
+                    <label class="eq-label">Mid</label>
+                    <input type="range" id="eq-mid" class="eq-slider" min="-12" max="12" step="0.5" value="0" orient="vertical">
+                    <span class="eq-value" id="mid-value">0 dB</span>
+                </div>
+                <div class="eq-band">
+                    <label class="eq-label">Treble</label>
+                    <input type="range" id="eq-treble" class="eq-slider" min="-12" max="12" step="0.5" value="0" orient="vertical">
+                    <span class="eq-value" id="treble-value">0 dB</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Lyrics Display -->
+        <div id="lyrics-display">
+            <button id="export-lyrics-button" disabled>📥 Export</button>
+            <div class="lyric-line">Lyrics will appear here when a track is loaded.</div>
+        </div>
+        
+        <!-- Visualizer -->
+        <div id="player-wrapper">
+            <canvas id="visualizer"></canvas>
+            <video id="audio-player" preload="metadata" crossorigin="anonymous"></video>
+        </div>
+        
+        <!-- Playlist -->
+        <div id="playlist-container">
+            <div id="playlist-header">
+                <h2>📋 Playlist</h2>
+                <button id="jump-to-current" disabled>🎯 Current</button>
+                <button id="clear-playlist" disabled>🗑️ Clear</button>
+            </div>
+            <input type="text" id="playlist-search" placeholder="🔍 Search playlist..." style="display: none;">
+            <div id="playlist-items">
+                <div class="empty-playlist">No tracks loaded yet. Click "Load Music & Lyrics" to get started!</div>
+            </div>
+        </div>
+        
+        <div id="debug-panel"></div>
     </div>
     
-    <div id="playlist-container">
-    <div id="playlist-header">
-        <h2>📋 Playlist</h2>
-        <button id="jump-to-current" disabled>🎯 Current</button>
-        <button id="clear-playlist" disabled>🗑️ Clear</button>
-    </div>
-    <input type="text" id="playlist-search" placeholder="🔍 Search playlist..." style="display: none;">
-    <div id="playlist-items">
-        <div class="empty-playlist">No tracks loaded yet. Click "Load Music & Lyrics" to get started!</div>
-    </div>
-</div>
-    
-    <div id="debug-panel"></div>
-
+    <!-- Hidden Elements -->
     <video id="pip-video" muted playsinline style="display:none;"></video>
-
-    <!-- Fullscreen Visualizer Overlay -->
-<div id="fullscreen-visualizer" class="fullscreen-viz-hidden">
-    <div class="fullscreen-viz-controls">
-        <button id="viz-mode-btn" class="viz-control-btn">🎨 Mode: Bars</button>
-        <button id="viz-prev-btn" class="viz-control-btn">◀ Previous</button>
-        <button id="viz-play-pause-btn" class="viz-control-btn">⏸ Pause</button>
-        <button id="viz-next-btn" class="viz-control-btn">▶ Next</button>
-        <button id="viz-close-btn" class="viz-control-btn">✕ Close (ESC)</button>
-    </div>
-    <canvas id="fullscreen-viz-canvas"></canvas>
-    <div class="fullscreen-viz-info">
-        <div class="fullscreen-viz-title">No track loaded</div>
-        <div class="fullscreen-viz-artist">--</div>
-        <div class="fullscreen-viz-time">
-            <span id="viz-current-time">0:00</span> / <span id="viz-duration">0:00</span>
+    
+    <!-- Fullscreen Visualizer -->
+    <div id="fullscreen-visualizer" class="fullscreen-viz-hidden">
+        <div class="fullscreen-viz-controls">
+            <button id="viz-mode-btn" class="viz-control-btn">🎨 Mode: Bars</button>
+            <button id="viz-prev-btn" class="viz-control-btn">◀ Previous</button>
+            <button id="viz-play-pause-btn" class="viz-control-btn">⏸ Pause</button>
+            <button id="viz-next-btn" class="viz-control-btn">▶ Next</button>
+            <button id="viz-close-btn" class="viz-control-btn">✕ Close (ESC)</button>
+        </div>
+        <canvas id="fullscreen-viz-canvas"></canvas>
+        <div class="fullscreen-viz-info">
+            <div class="fullscreen-viz-title">No track loaded</div>
+            <div class="fullscreen-viz-artist">--</div>
+            <div class="fullscreen-viz-time">
+                <span id="viz-current-time">0:00</span> / <span id="viz-duration">0:00</span>
+            </div>
         </div>
     </div>
-</div>
-
-    <!-- Link to external JavaScript -->
+    
+    <!-- Fullscreen Lyrics -->
+    <div id="fullscreen-lyrics" class="fullscreen-lyrics-hidden">
+        <canvas id="fullscreen-lyrics-viz-canvas"></canvas>
+        <button class="fullscreen-lyrics-close" id="lyrics-close-btn">✕</button>
+        <div class="fullscreen-lyrics-content" id="fullscreen-lyrics-content">
+            <div class="fullscreen-lyrics-empty">No lyrics available</div>
+        </div>
+        <div class="fullscreen-lyrics-controls">
+            <button class="lyrics-control-btn" id="lyrics-prev-btn">◀ Previous</button>
+            <button class="lyrics-control-btn" id="lyrics-next-btn">Next ▶</button>
+        </div>
+    </div>
+    
+    <!-- Smart Playlist Modal -->
+    <div id="smart-playlist-modal" style="display: none;">
+        <div class="smart-playlist-overlay"></div>
+        <div class="smart-playlist-content">
+            <div class="smart-playlist-header">
+                <h2>🧠 Smart Playlist Generator</h2>
+                <button class="smart-playlist-close">✕</button>
+            </div>
+            <div class="smart-playlist-body">
+                <div class="analysis-section">
+                    <h3>📊 Step 1: Analyze Your Music</h3>
+                    <div class="button-group">
+                        <button id="analyze-all-btn">🔍 Analyze All Tracks</button>
+                        <button id="save-analysis-btn" disabled>💾 Save Analysis</button>
+                    </div>
+                    <div class="progress-container" id="analysis-progress-container">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="analysis-progress-fill">0%</div>
+                        </div>
+                        <div class="progress-text" id="analysis-progress-text">Ready to analyze...</div>
+                    </div>
+                </div>
+                <div class="analysis-section">
+                    <h3>🎯 Step 2: Choose Playlist Type</h3>
+                    <div class="templates-grid" id="templates-grid"></div>
+                </div>
+                <div class="playlist-result" id="smart-playlist-result">
+                    <div class="playlist-header">
+                        <div>
+                            <h3 id="result-title">Playlist Generated</h3>
+                            <p id="result-description" style="color: #aaa; margin-top: 5px;"></p>
+                        </div>
+                        <button id="load-smart-playlist-btn" class="success">▶️ Load to Player</button>
+                    </div>
+                    <div class="playlist-stats" id="smart-playlist-stats"></div>
+                    <div class="track-list" id="smart-track-list"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Scripts -->
     <script src="performance-manager.js"></script>
     <script src="audio-presets-manager.js"></script>
     <script src="visualizer-manager.js"></script>
@@ -180,82 +338,68 @@
     <script src="dj-mode-manager.js"></script>
     <script src="analysis-text-parser.js"></script>
     <script src="script.js"></script>
-
- <!-- ADD THIS RIGHT BEFORE </body> -->
-<script src="mobile.js"></script>
-<script src="sw-init.js"></script>
-<script src="custom-background.js"></script>
-
-    <!-- Fullscreen Lyrics with Edge Visualizer -->
-<div id="fullscreen-lyrics" class="fullscreen-lyrics-hidden">
-    <canvas id="fullscreen-lyrics-viz-canvas"></canvas>
+    <script src="mobile.js"></script>
+    <script src="sw-init.js"></script>
+    <script src="custom-background.js"></script>
     
-    <button class="fullscreen-lyrics-close" id="lyrics-close-btn">✕</button>
+    <!-- Sidebar functionality -->
+    <script>
+    // Sidebar toggle
+    const sidebar = document.getElementById('sidebar');
+    const sidebarToggle = document.getElementById('sidebar-toggle');
     
-    <div class="fullscreen-lyrics-content" id="fullscreen-lyrics-content">
-        <div class="fullscreen-lyrics-empty">No lyrics available</div>
-    </div>
+    if (sidebarToggle && sidebar) {
+        sidebarToggle.addEventListener('click', () => {
+            sidebar.classList.toggle('collapsed');
+        });
+    }
     
-    <div class="fullscreen-lyrics-controls">
-        <button class="lyrics-control-btn" id="lyrics-prev-btn">◀ Previous</button>
-        <button class="lyrics-control-btn" id="lyrics-next-btn">Next ▶</button>
-    </div>
-</div>
-
-    <!-- Smart Playlist Modal -->
-<div id="smart-playlist-modal" style="display: none;">
-    <div class="smart-playlist-overlay"></div>
-    <div class="smart-playlist-content">
-        <div class="smart-playlist-header">
-            <h2>🧠 Smart Playlist Generator</h2>
-            <button class="smart-playlist-close">✕</button>
-        </div>
+    // Preserve emoji icons when button text changes
+    // Override textContent setter for sidebar buttons
+    document.querySelectorAll('.sidebar-btn').forEach(btn => {
+        const originalTextContent = Object.getOwnPropertyDescriptor(Node.prototype, 'textContent');
+        const icon = btn.dataset.icon;
         
-        <div class="smart-playlist-body">
-            <!-- Analysis Section -->
-            <div class="analysis-section">
-                <h3>📊 Step 1: Analyze Your Music</h3>
-                <div class="button-group">
-                    <button id="analyze-all-btn">🔍 Analyze All Tracks</button>
-                    <button id="save-analysis-btn" disabled>💾 Save Analysis</button>
-                </div>
-                <div class="progress-container" id="analysis-progress-container">
-                    <div class="progress-bar">
-                        <div class="progress-fill" id="analysis-progress-fill">0%</div>
-                    </div>
-                    <div class="progress-text" id="analysis-progress-text">Ready to analyze...</div>
-                </div>
-            </div>
-            
-            <!-- Templates Section -->
-            <div class="analysis-section">
-                <h3>🎯 Step 2: Choose Playlist Type</h3>
-                <div class="templates-grid" id="templates-grid">
-                    <!-- Templates will be inserted here by JavaScript -->
-                </div>
-            </div>
-            
-            <!-- Results Section -->
-            <div class="playlist-result" id="smart-playlist-result">
-                <div class="playlist-header">
-                    <div>
-                        <h3 id="result-title">Playlist Generated</h3>
-                        <p id="result-description" style="color: #aaa; margin-top: 5px;"></p>
-                    </div>
-                    <button id="load-smart-playlist-btn" class="success">▶️ Load to Player</button>
-                </div>
-                
-                <div class="playlist-stats" id="smart-playlist-stats">
-                    <!-- Stats will be inserted here -->
-                </div>
-                
-                <div class="track-list" id="smart-track-list">
-                    <!-- Tracks will be inserted here -->
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
+        Object.defineProperty(btn, 'textContent', {
+            set: function(value) {
+                // Update the label span instead of the entire button
+                const labelSpan = this.querySelector('.sidebar-label');
+                if (labelSpan) {
+                    labelSpan.textContent = value;
+                }
+            },
+            get: function() {
+                const labelSpan = this.querySelector('.sidebar-label');
+                return labelSpan ? labelSpan.textContent : '';
+            }
+        });
+    });
+    
+    // Play/pause button functionality
+    const playPauseButton = document.getElementById('play-pause-button');
+    const audioPlayer = document.getElementById('audio-player');
+    
+    if (playPauseButton && audioPlayer) {
+        playPauseButton.addEventListener('click', () => {
+            if (audioPlayer.paused) {
+                audioPlayer.play();
+            } else {
+                audioPlayer.pause();
+            }
+        });
+        
+        audioPlayer.addEventListener('play', () => {
+            playPauseButton.querySelector('.control-icon').textContent = '⏸️';
+        });
+        
+        audioPlayer.addEventListener('pause', () => {
+            playPauseButton.querySelector('.control-icon').textContent = '▶️';
+        });
+        
+        audioPlayer.addEventListener('ended', () => {
+            playPauseButton.querySelector('.control-icon').textContent = '▶️';
+        });
+    }
+    </script>
 </body>
 </html>

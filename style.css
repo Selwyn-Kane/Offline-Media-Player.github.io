@@ -2203,3 +2203,328 @@ button.active:hover {
 #deep-analysis-btn:hover:not(:disabled) {
     background: linear-gradient(135deg, #7952cc 0%, #6f42c1 100%);
 }
+
+/* ========== SIDEBAR STYLES ========== */
+body {
+    display: block;
+    padding: 0;
+    margin: 0;
+}
+
+#sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    height: 100vh;
+    background: linear-gradient(180deg, #1a1a1a 0%, #0a0a0a 100%);
+    border-right: 2px solid #dc3545;
+    z-index: 9000;
+    transition: width 0.3s ease;
+    overflow: hidden;
+    box-shadow: 5px 0 20px rgba(0, 0, 0, 0.5);
+}
+
+#sidebar.collapsed {
+    width: 70px;
+}
+
+#sidebar:not(.collapsed) {
+    width: 280px;
+}
+
+.sidebar-toggle {
+    width: 100%;
+    padding: 20px;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid #333;
+    color: #dc3545;
+    font-size: 24px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-align: center;
+    box-shadow: none !important;
+    text-transform: none !important;
+    letter-spacing: 0 !important;
+}
+
+.sidebar-toggle:hover {
+    background: rgba(220, 53, 69, 0.1);
+    transform: scale(1.1);
+    box-shadow: none !important;
+}
+
+.sidebar-content {
+    padding: 10px 0;
+    overflow-y: auto;
+    height: calc(100vh - 70px);
+}
+
+.sidebar-content::-webkit-scrollbar {
+    width: 6px;
+}
+
+.sidebar-content::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.sidebar-content::-webkit-scrollbar-thumb {
+    background: #dc3545;
+    border-radius: 3px;
+}
+
+.sidebar-item {
+    width: 100%;
+}
+
+.sidebar-btn {
+    width: 100%;
+    padding: 15px 20px;
+    background: transparent;
+    border: none;
+    color: #ddd;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    text-align: left;
+    border-left: 3px solid transparent;
+    white-space: nowrap;
+    box-shadow: none !important;
+    text-transform: none !important;
+    letter-spacing: 0 !important;
+}
+
+.sidebar-btn:hover:not(:disabled) {
+    background: rgba(220, 53, 69, 0.1);
+    border-left-color: #dc3545;
+    transform: none !important;
+    box-shadow: none !important;
+}
+
+.sidebar-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+.sidebar-btn.active {
+    background: rgba(40, 167, 69, 0.2);
+    border-left-color: #28a745;
+    box-shadow: none !important;
+}
+
+.sidebar-icon {
+    font-size: 20px;
+    min-width: 30px;
+    text-align: center;
+    display: inline-block;
+}
+
+.sidebar-label {
+    font-size: 14px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    opacity: 1;
+    transition: opacity 0.2s ease;
+    display: inline-block;
+}
+
+#sidebar.collapsed .sidebar-label {
+    opacity: 0;
+    width: 0;
+    overflow: hidden;
+}
+
+#sidebar.collapsed .sidebar-btn {
+    justify-content: center;
+    padding: 15px;
+}
+
+/* ========== MAIN CONTENT ADJUSTMENT ========== */
+#main-content {
+    margin-left: 70px;
+    transition: margin-left 0.3s ease;
+    padding: 20px;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+body h1 {
+    text-align: center;
+    margin-bottom: 20px;
+    width: 100%;
+}
+
+/* ========== PLAYBACK CONTROLS ========== */
+#playback-controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 15px;
+    margin-bottom: 25px;
+    width: 90%;
+    max-width: 600px;
+}
+
+.control-btn {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+    border: none;
+    color: white;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 15px rgba(220, 53, 69, 0.3);
+    padding: 0;
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+.control-btn-play {
+    width: 80px;
+    height: 80px;
+    box-shadow: 0 6px 20px rgba(220, 53, 69, 0.5);
+}
+
+.control-btn:hover:not(:disabled) {
+    transform: translateY(-3px) scale(1.05);
+    box-shadow: 0 8px 25px rgba(220, 53, 69, 0.6);
+}
+
+.control-btn:active:not(:disabled) {
+    transform: translateY(-1px) scale(1.02);
+}
+
+.control-btn:disabled {
+    background: linear-gradient(135deg, #555 0%, #444 100%);
+    opacity: 0.5;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+.control-btn.active {
+    background: linear-gradient(135deg, #28a745 0%, #1e7e34 100%);
+    box-shadow: 0 4px 15px rgba(40, 167, 69, 0.4);
+}
+
+.control-icon {
+    font-size: 24px;
+}
+
+.control-btn-play .control-icon {
+    font-size: 32px;
+}
+
+.control-label {
+    display: none;
+}
+
+#loop-button {
+    width: auto;
+    padding: 0 20px;
+    border-radius: 30px;
+    gap: 8px;
+}
+
+#loop-button .control-label {
+    display: inline;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+/* ========== FILE CONTROLS ========== */
+#file-controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 25px;
+    width: 90%;
+    max-width: 800px;
+}
+
+#file-controls button {
+    padding: 12px 24px;
+}
+
+#auto-reload-label {
+    display: inline-flex !important;
+    align-items: center;
+    color: #fff;
+    font-size: 14px;
+    gap: 8px;
+    cursor: pointer;
+}
+
+#auto-reload-check {
+    cursor: pointer;
+    width: 18px;
+    height: 18px;
+}
+
+/* ========== RESPONSIVE SIDEBAR ========== */
+@media (max-width: 1024px) {
+    #sidebar:not(.collapsed) {
+        width: 280px;
+    }
+    
+    #main-content {
+        margin-left: 70px;
+    }
+}
+
+@media (max-width: 768px) {
+    #sidebar {
+        width: 60px !important;
+    }
+    
+    #sidebar .sidebar-label {
+        display: none !important;
+    }
+    
+    .sidebar-btn {
+        padding: 12px !important;
+    }
+    
+    .sidebar-icon {
+        font-size: 18px;
+    }
+    
+    #main-content {
+        margin-left: 60px !important;
+        padding: 10px;
+    }
+    
+    #playback-controls {
+        gap: 10px;
+    }
+    
+    .control-btn {
+        width: 50px;
+        height: 50px;
+    }
+    
+    .control-btn-play {
+        width: 65px;
+        height: 65px;
+    }
+    
+    .control-icon {
+        font-size: 20px;
+    }
+    
+    .control-btn-play .control-icon {
+        font-size: 26px;
+    }
+}
+/* ========== END SIDEBAR STYLES ========== */
