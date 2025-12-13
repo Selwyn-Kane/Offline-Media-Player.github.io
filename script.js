@@ -289,6 +289,8 @@ async function verifyFolderPermission(handle) {
         const midValue = document.getElementById('mid-value');
         const trebleValue = document.getElementById('treble-value');
         const eqResetBtn = document.getElementById('eq-reset');
+        const perfManager = new PerformanceManager(debugLog);
+        debugLog('✅ Performance manager initialized', 'success');
 
     // Initialize custom background manager
 if (typeof CustomBackgroundManager !== 'undefined') {
@@ -1019,11 +1021,11 @@ exportLyricsButton.oncontextmenu = (e) => {
         const badges = [];
         if (track.vtt) badges.push('<span class="badge badge-lyrics">🎤 Lyrics</span>');
         if (track.metadata?.hasMetadata) badges.push('<span class="badge badge-metadata">🏷️ ID3</span>');
+        if (track.hasDeepAnalysis) badges.push('<span class="badge badge-analysis">🔍 Deep</span>');
         
-// REPLACE IT WITH:
-const infoDiv = document.createElement('div');
-infoDiv.className = 'playlist-item-info';
-infoDiv.innerHTML = `
+        const infoDiv = document.createElement('div');
+        infoDiv.className = 'playlist-item-info';
+        infoDiv.innerHTML = `
     <div class="playlist-item-title">${track.metadata?.title || track.fileName}</div>
     <div class="playlist-item-artist">${track.metadata?.artist || 'Unknown Artist'}</div>
     ${badges.length > 0 ? `<div class="playlist-item-badges">${badges.join('')}</div>` : ''}
@@ -1151,7 +1153,7 @@ if (jumpToCurrentBtn) {
         }
     };
 }
-
+    
 // Enable/disable based on whether track is playing
 function updateJumpButton() {
     if (jumpToCurrentBtn) {
@@ -1503,8 +1505,9 @@ window.handleFileLoad = async function handleFileLoad(event) {
         f.name.toLowerCase().match(/\.(mp3|wav|ogg|m4a|flac|aac|wma)$/)
     );
     const vttFiles = files.filter(f => f.name.toLowerCase().endsWith('.vtt'));
+    const analysisFiles = files.filter(f => f.name.toLowerCase().endsWith('.txt')); // ✅ NEW
     
-    debugLog(`Found ${audioFiles.length} audio files and ${vttFiles.length} VTT files`);
+    debugLog(`Found ${audioFiles.length} audio, ${vttFiles.length} VTT, and ${analysisFiles.length} analysis files`);
 
     // Validate VTT files
     for (const vtt of vttFiles) {
@@ -1514,21 +1517,47 @@ window.handleFileLoad = async function handleFileLoad(event) {
         }
     }
     
+    // ✅ NEW: Initialize analysis parser
+    const analysisParser = new AnalysisTextParser(debugLog);
+    
     // Build playlist
     playlist = [];
     
-    // ✅ FIXED: Loop through audioFiles and find matching VTT for each one
     for (const audioFile of audioFiles) {
         const baseName = audioFile.name.split('.').slice(0, -1).join('.');
         
-        // ✅ FIXED: Define matchingVtt INSIDE the loop for each audio file
+        // Find matching VTT
         const matchingVtt = vttFiles.find(vtt => {
             const vttBaseName = vtt.name.split('.').slice(0, -1).join('.');
             return vttBaseName === baseName;
         });
         
+        // ✅ NEW: Find matching analysis file
+        const matchingAnalysis = analysisFiles.find(txt => {
+            const txtBaseName = txt.name.split('.').slice(0, -1).join('.');
+            return txtBaseName === baseName;
+        });
+        
         if (matchingVtt) {
             debugLog(`✓ Matched: ${audioFile.name} ⟷ ${matchingVtt.name}`, 'success');
+        }
+        
+        // ✅ NEW: Parse analysis file if found
+        let parsedAnalysis = null;
+        if (matchingAnalysis) {
+            try {
+                const analysisText = await matchingAnalysis.text();
+                parsedAnalysis = analysisParser.parseAnalysisText(analysisText);
+                
+                if (analysisParser.isValidAnalysis(parsedAnalysis)) {
+                    debugLog(`✓ Loaded deep analysis: ${audioFile.name} ⟷ ${matchingAnalysis.name}`, 'success');
+                } else {
+                    debugLog(`⚠ Invalid analysis format: ${matchingAnalysis.name}`, 'warning');
+                    parsedAnalysis = null;
+                }
+            } catch (err) {
+                debugLog(`❌ Failed to parse analysis: ${err.message}`, 'error');
+            }
         }
         
         // Extract metadata from file
@@ -1537,11 +1566,10 @@ window.handleFileLoad = async function handleFileLoad(event) {
         // Check if we have custom metadata for this file
         const customMeta = customMetadataStore.get(audioFile.name, audioFile.size);
         if (customMeta) {
-            // Merge custom metadata (custom takes priority)
             metadata = {
                 ...metadata,
                 ...customMeta,
-                image: metadata.image || customMeta.image, // Keep original image
+                image: metadata.image || customMeta.image,
                 hasMetadata: true,
                 isCustom: true
             };
@@ -1570,8 +1598,8 @@ window.handleFileLoad = async function handleFileLoad(event) {
 
         const audioURL = URL.createObjectURL(audioFile);
 
-// ✅ NEW: Auto-load cached analysis
-        const cachedAnalysis = analyzer.analysisCache.get(audioFile.name);
+        // ✅ NEW: Prefer deep analysis over cached analysis
+        const finalAnalysis = parsedAnalysis || analyzer.analysisCache.get(audioFile.name);
         
         playlist.push({ 
             audioURL: audioURL,
@@ -1585,11 +1613,13 @@ window.handleFileLoad = async function handleFileLoad(event) {
                 hasMetadata: false
             },
             duration: duration,
-            analysis: cachedAnalysis || null  // ✅ Add analysis if available
+            analysis: finalAnalysis,  // ✅ Use deep analysis if available
+            hasDeepAnalysis: !!parsedAnalysis  // ✅ NEW: Flag for deep analysis
         });
         
-        if (cachedAnalysis) {
-            debugLog(`📊 Loaded cached analysis for: ${audioFile.name}`, 'success');
+        if (finalAnalysis) {
+            const source = parsedAnalysis ? 'deep analysis file' : 'cache';
+            debugLog(`📊 Loaded analysis from ${source}: ${audioFile.name}`, 'success');
         }
     }
 
@@ -1604,13 +1634,19 @@ window.handleFileLoad = async function handleFileLoad(event) {
             loadTrack(0);
         }, 150);
         
-// âœ… NEW: Start background analysis AFTER first track loads
-setTimeout(() => {
-    if (analyzer && playlist.length > 0) {
-        debugLog('ðŸ" Starting background analysis...', 'info');
-        startBackgroundAnalysis();
-    }
-}, 3000); // Increased delay to ensure everything is ready
+        // ✅ MODIFIED: Only start background analysis for tracks WITHOUT deep analysis
+        setTimeout(() => {
+            if (analyzer && playlist.length > 0) {
+                const needsAnalysis = playlist.filter(t => !t.hasDeepAnalysis && !t.analysis);
+                
+                if (needsAnalysis.length > 0) {
+                    debugLog(`🔍 Starting background analysis for ${needsAnalysis.length} unanalyzed tracks...`, 'info');
+                    startBackgroundAnalysis();
+                } else {
+                    debugLog(`✅ All tracks have deep analysis - skipping background analysis`, 'success');
+                }
+            }
+        }, 3000);
         
         prevButton.disabled = false;
         nextButton.disabled = false;
@@ -1903,6 +1939,12 @@ player.addEventListener('timeupdate', () => {
 const crossfadeButton = document.getElementById('crossfade-button');
 if (crossfadeButton) {
     crossfadeButton.onclick = () => {
+        // ✅ ADD THIS CHECK
+        if (!crossfadeManager) {
+            alert('Please play a track first to initialize the audio system!');
+            return;
+        }
+        
         const newState = !crossfadeManager.enabled;
         crossfadeManager.setEnabled(newState);
         
@@ -1917,13 +1959,18 @@ if (crossfadeButton) {
 const autoEQButton = document.getElementById('auto-eq-button');
 if (autoEQButton) {
     autoEQButton.onclick = () => {
+        // ✅ ADD THIS CHECK
+        if (!autoEQManager) {
+            alert('Please play a track first to initialize the audio system!');
+            return;
+        }
+        
         const newState = !autoEQManager.enabled;
         autoEQManager.setEnabled(newState);
         
         autoEQButton.classList.toggle('active', newState);
         autoEQButton.textContent = newState ? '🎛️ Auto-EQ On' : '🎛️ Auto-EQ Off';
         
-        // If enabling and track is loaded, apply immediately
         if (newState && currentTrackIndex !== -1) {
             autoEQManager.applyAutoEQ(playlist[currentTrackIndex]);
         }
@@ -2142,6 +2189,7 @@ async function loadFromFolder() {
         
         const audioFiles = [];
         const vttFiles = [];
+        const analysisFiles = [];
         
         // Scan through all files in the folder
         for await (const entry of folderHandle.values()) {
@@ -2160,6 +2208,12 @@ async function loadFromFolder() {
                     vttFiles.push(file);
                     debugLog(`Found lyrics: ${file.name}`, 'success');
                 }
+                
+                // Check if it's an analysis file
+                if (file.name.toLowerCase().endsWith('.txt')) {
+                    analysisFiles.push(file);
+                    debugLog(`Found analysis: ${file.name}`, 'success');
+                }
             }
         }
         
@@ -2169,7 +2223,7 @@ async function loadFromFolder() {
             return;
         }
         
-        debugLog(`Found ${audioFiles.length} audio files and ${vttFiles.length} VTT files`, 'success');
+        debugLog(`Found ${audioFiles.length} audio files, ${vttFiles.length} VTT files, and ${analysisFiles.length} analysis files`, 'success');
         
         // IMPORTANT: Stop current playback before reloading
         player.pause();
@@ -2179,7 +2233,7 @@ async function loadFromFolder() {
         // Use the existing handleFileLoad logic
         const fakeEvent = {
             target: {
-                files: [...audioFiles, ...vttFiles]
+                files: [...audioFiles, ...vttFiles, ...analysisFiles]
             }
         };
         
@@ -2192,8 +2246,8 @@ async function loadFromFolder() {
         alert(`Failed to load folder: ${err.message}\n\nTry selecting the folder again.`);
         playlistStatus.textContent = 'Failed to load folder';
     }
-    updateSmartPlaylistButton();
     
+    updateSmartPlaylistButton();
 }
         
        // --- Volume Control System ---
@@ -3362,6 +3416,15 @@ if (autoLyricsBtn) {
     };
 }
 
+    // Deep Analysis Tool button
+const deepAnalysisBtn = document.getElementById('deep-analysis-btn');
+
+if (deepAnalysisBtn) {
+    deepAnalysisBtn.onclick = () => {
+        window.open('deep-music-analysis.html', '_blank');
+    };
+}
+
 // ========== FULLSCREEN LYRICS WITH EDGE VISUALIZER ==========
 try {
     const fullscreenLyricsToggle = document.getElementById('fullscreen-lyrics-toggle');
@@ -3899,8 +3962,11 @@ async function startBackgroundAnalysis() {
     for (let i = 0; i < playlist.length; i++) {
         const track = playlist[i];
         
-        // Skip if already analyzed
-        if (track.analysis) continue;
+        // ✅ MODIFIED: Skip if already has deep analysis or any analysis
+        if (track.hasDeepAnalysis || track.analysis) {
+            debugLog(`⏭ Skipping ${track.fileName} (already has analysis)`, 'info');
+            continue;
+        }
         
         try {
             // Convert audio URL to blob to file
@@ -3942,6 +4008,8 @@ async function startBackgroundAnalysis() {
     if (analyzedCount > 0) {
         analyzer.saveAnalysesToStorage();
         debugLog(`✅ Background analysis complete! ${analyzedCount} tracks analyzed`, 'success');
+    } else {
+        debugLog(`✅ No background analysis needed - all tracks have deep analysis!`, 'success');
     }
     
     backgroundAnalysisRunning = false;

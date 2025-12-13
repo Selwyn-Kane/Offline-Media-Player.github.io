@@ -800,6 +800,11 @@ video {
     color: #fff;
 }
 
+.badge-analysis {
+    background: #6f42c1;
+    color: #fff;
+}
+
 .empty-playlist {
     text-align: center;
     color: #666;
@@ -2189,4 +2194,12 @@ button.active {
 
 button.active:hover {
     background: linear-gradient(135deg, #218838 0%, #1ba87d 100%);
+}
+
+#deep-analysis-btn {
+    background: linear-gradient(135deg, #6f42c1 0%, #5a32a3 100%);
+}
+
+#deep-analysis-btn:hover:not(:disabled) {
+    background: linear-gradient(135deg, #7952cc 0%, #6f42c1 100%);
 }
