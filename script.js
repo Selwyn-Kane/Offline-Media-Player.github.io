@@ -3341,13 +3341,13 @@ djModeManager = new DJModeManager(debugLog);
 
 debugLog('âœ… Advanced systems prepared', 'success');
 
-// Load saved preferences
+// Load saved preferences (with null checks)
 const savedCrossfade = localStorage.getItem('crossfadeEnabled') === 'true';
 const savedAutoEQ = localStorage.getItem('autoEQEnabled') === 'true';
 const savedDJMode = localStorage.getItem('djModeEnabled') === 'true';
 
-if (savedCrossfade) crossfadeManager.setEnabled(true);
-if (savedAutoEQ) autoEQManager.setEnabled(true);
+if (savedCrossfade && crossfadeManager) crossfadeManager.setEnabled(true);
+if (savedAutoEQ && autoEQManager) autoEQManager.setEnabled(true);
 if (savedDJMode) {
     djModeManager.enabled = true;
     djModeButton.classList.add('active');
@@ -3362,250 +3362,258 @@ if (autoLyricsBtn) {
     };
 }
 
-    // ========== FULLSCREEN LYRICS WITH EDGE VISUALIZER ==========
-const fullscreenLyricsToggle = document.getElementById('fullscreen-lyrics-toggle');
-const fullscreenLyrics = document.getElementById('fullscreen-lyrics');
-const fullscreenLyricsVizCanvas = document.getElementById('fullscreen-lyrics-viz-canvas');
-const fullscreenLyricsContent = document.getElementById('fullscreen-lyrics-content');
-const lyricsCloseBtn = document.getElementById('lyrics-close-btn');
-const lyricsPrevBtn = document.getElementById('lyrics-prev-btn');
-const lyricsNextBtn = document.getElementById('lyrics-next-btn');
+// ========== FULLSCREEN LYRICS WITH EDGE VISUALIZER ==========
+try {
+    const fullscreenLyricsToggle = document.getElementById('fullscreen-lyrics-toggle');
+    const fullscreenLyrics = document.getElementById('fullscreen-lyrics');
+    const fullscreenLyricsVizCanvas = document.getElementById('fullscreen-lyrics-viz-canvas');
+    const fullscreenLyricsContent = document.getElementById('fullscreen-lyrics-content');
+    const lyricsCloseBtn = document.getElementById('lyrics-close-btn');
+    const lyricsPrevBtn = document.getElementById('lyrics-prev-btn');
+    const lyricsNextBtn = document.getElementById('lyrics-next-btn');
 
+    if (!fullscreenLyricsToggle) {
+        console.error('❌ Fullscreen lyrics button not found!');
+        throw new Error('Button element missing');
+    }
 
-function toggleFullscreenLyrics(show) {
-    fullscreenLyricsActive = show;
-    
-    if (show) {
-        // Check if we have lyrics
+    console.log('✅ Fullscreen lyrics elements found, attaching handlers...');
+
+    let fullscreenLyricsActive = false;
+    let lyricsVizAnimationId = null;
+
+    function toggleFullscreenLyrics(show) {
+        console.log('🎤 toggleFullscreenLyrics called with:', show);
+        fullscreenLyricsActive = show;
+        
+        if (show) {
+            // Check if we have lyrics
+            if (cues.length === 0) {
+                alert('No lyrics available for this track!');
+                return;
+            }
+            
+            fullscreenLyrics.classList.remove('fullscreen-lyrics-hidden');
+            fullscreenLyrics.classList.add('show');
+            
+            // Resize canvas
+            fullscreenLyricsVizCanvas.width = window.innerWidth;
+            fullscreenLyricsVizCanvas.height = window.innerHeight;
+            
+            // Render lyrics
+            renderFullscreenLyrics();
+            
+            // Start edge visualizer
+            startLyricsEdgeVisualizer();
+            
+            fullscreenLyricsToggle.classList.add('active');
+            fullscreenLyricsToggle.textContent = '🎤 Exit Lyrics';
+            
+            debugLog('Fullscreen lyrics activated', 'success');
+        } else {
+            fullscreenLyrics.classList.add('fullscreen-lyrics-hidden');
+            fullscreenLyrics.classList.remove('show');
+            
+            // Stop visualizer
+            stopLyricsEdgeVisualizer();
+            
+            fullscreenLyricsToggle.classList.remove('active');
+            fullscreenLyricsToggle.textContent = '🎤 Fullscreen Lyrics';
+            
+            debugLog('Fullscreen lyrics deactivated', 'info');
+        }
+    }
+
+    function renderFullscreenLyrics() {
+        fullscreenLyricsContent.innerHTML = '';
+        
         if (cues.length === 0) {
-            alert('No lyrics available for this track!');
+            fullscreenLyricsContent.innerHTML = '<div class="fullscreen-lyrics-empty">No lyrics available</div>';
             return;
         }
         
-        fullscreenLyrics.classList.remove('fullscreen-lyrics-hidden');
-        fullscreenLyrics.classList.add('show');
-        
-        // Resize canvas
-        fullscreenLyricsVizCanvas.width = window.innerWidth;
-        fullscreenLyricsVizCanvas.height = window.innerHeight;
-        
-        // Render lyrics
-        renderFullscreenLyrics();
-        
-        // Start edge visualizer
-        startLyricsEdgeVisualizer();
-        
-        fullscreenLyricsToggle.classList.add('active');
-        fullscreenLyricsToggle.textContent = '🎤 Exit Lyrics';
-        
-        debugLog('Fullscreen lyrics activated', 'success');
-    } else {
-        fullscreenLyrics.classList.add('fullscreen-lyrics-hidden');
-        fullscreenLyrics.classList.remove('show');
-        
-        // Stop visualizer
-        stopLyricsEdgeVisualizer();
-        
-        fullscreenLyricsToggle.classList.remove('active');
-        fullscreenLyricsToggle.textContent = '🎤 Fullscreen Lyrics';
-        
-        debugLog('Fullscreen lyrics deactivated', 'info');
+        cues.forEach((cue, index) => {
+            const line = document.createElement('div');
+            line.className = 'fullscreen-lyric-line';
+            line.textContent = cue.text.replace(/\r?\n|\r/g, ' ');
+            line.dataset.index = index;
+            line.dataset.startTime = cue.startTime;
+            
+            line.onclick = () => {
+                player.currentTime = cue.startTime;
+                debugLog(`Jumped to: ${formatTime(cue.startTime)}`, 'info');
+            };
+            
+            fullscreenLyricsContent.appendChild(line);
+        });
     }
-}
 
-function renderFullscreenLyrics() {
-    fullscreenLyricsContent.innerHTML = '';
-    
-    if (cues.length === 0) {
-        fullscreenLyricsContent.innerHTML = '<div class="fullscreen-lyrics-empty">No lyrics available</div>';
-        return;
-    }
-    
-    cues.forEach((cue, index) => {
-        const line = document.createElement('div');
-        line.className = 'fullscreen-lyric-line';
-        line.textContent = cue.text.replace(/\r?\n|\r/g, ' ');
-        line.dataset.index = index;
-        line.dataset.startTime = cue.startTime;
+    function updateFullscreenLyricsHighlight() {
+        if (!fullscreenLyricsActive) return;
         
-        line.onclick = () => {
-            player.currentTime = cue.startTime;
-            debugLog(`Jumped to: ${formatTime(cue.startTime)}`, 'info');
-        };
+        const currentTime = player.currentTime;
+        const lines = fullscreenLyricsContent.querySelectorAll('.fullscreen-lyric-line');
         
-        fullscreenLyricsContent.appendChild(line);
-    });
-}
-
-function updateFullscreenLyricsHighlight() {
-    if (!fullscreenLyricsActive) return;
-    
-    const currentTime = player.currentTime;
-    const lines = fullscreenLyricsContent.querySelectorAll('.fullscreen-lyric-line');
-    
-    let activeLine = null;
-    
-    for (let i = 0; i < cues.length; i++) {
-        const cue = cues[i];
-        if (currentTime >= cue.startTime && currentTime < cue.endTime) {
-            activeLine = lines[i];
-            break;
-        }
-    }
-    
-    lines.forEach(line => line.classList.remove('active'));
-    
-    if (activeLine) {
-        activeLine.classList.add('active');
+        let activeLine = null;
         
-        // Auto-scroll
-        const lineRect = activeLine.getBoundingClientRect();
-        const containerRect = fullscreenLyricsContent.getBoundingClientRect();
-        
-        if (lineRect.top < containerRect.top || lineRect.bottom > containerRect.bottom) {
-            const lineTop = activeLine.offsetTop;
-            const lineHeight = activeLine.offsetHeight;
-            const containerHeight = fullscreenLyricsContent.clientHeight;
-            const targetScroll = lineTop - (containerHeight / 2) + (lineHeight / 2);
-            
-            fullscreenLyricsContent.scrollTo({ 
-                top: targetScroll,
-                behavior: 'smooth'
-            });
-        }
-    }
-}
-
-function startLyricsEdgeVisualizer() {
-    if (!analyser || !dataArray) return;
-    
-    const ctx = fullscreenLyricsVizCanvas.getContext('2d');
-    
-    function drawEdgeVisualizer() {
-        if (!fullscreenLyricsActive) {
-            lyricsVizAnimationId = null;
-            return;
-        }
-        
-        lyricsVizAnimationId = requestAnimationFrame(drawEdgeVisualizer);
-        
-        analyser.getByteFrequencyData(dataArray);
-        
-        // Clear with fade
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
-        ctx.fillRect(0, 0, fullscreenLyricsVizCanvas.width, fullscreenLyricsVizCanvas.height);
-        
-        const width = fullscreenLyricsVizCanvas.width;
-        const height = fullscreenLyricsVizCanvas.height;
-        const barCount = 240;
-        const barThickness = 6;
-        const maxBarLength = 100;
-        
-        // Draw bars around edges
-        for (let i = 0; i < barCount; i++) {
-            const dataIndex = Math.floor((i / barCount) * bufferLength);
-            const value = dataArray[dataIndex] / 255;
-            const barLength = value * maxBarLength;
-            
-            // ✅ NEW: Use album art color if available
-let hue;
-if (currentDominantColor) {
-    const { r, g, b } = currentDominantColor;
-    const baseHue = Math.atan2(Math.sqrt(3) * (g - b), 2 * r - g - b) * (180 / Math.PI);
-    const normalizedHue = baseHue < 0 ? baseHue + 360 : baseHue;
-    hue = normalizedHue + (i / barCount) * 40; // Slight variation
-} else {
-    hue = (i / barCount) * 360; // Fallback to rainbow
-}
-            const color = `hsl(${hue}, 100%, 60%)`;
-            
-            ctx.fillStyle = color;
-            ctx.shadowBlur = 15;
-            ctx.shadowColor = color;
-            
-            // Calculate position around perimeter
-            const perimeter = 2 * (width + height);
-            const position = (i / barCount) * perimeter;
-            
-            if (position < width) {
-                // Top edge
-                const x = position;
-                ctx.fillRect(x, 0, barThickness, barLength);
-            } else if (position < width + height) {
-                // Right edge
-                const y = position - width;
-                ctx.fillRect(width - barLength, y, barLength, barThickness);
-            } else if (position < 2 * width + height) {
-                // Bottom edge
-                const x = width - (position - width - height);
-                ctx.fillRect(x, height - barLength, barThickness, barLength);
-            } else {
-                // Left edge
-                const y = height - (position - 2 * width - height);
-                ctx.fillRect(0, y, barLength, barThickness);
+        for (let i = 0; i < cues.length; i++) {
+            const cue = cues[i];
+            if (currentTime >= cue.startTime && currentTime < cue.endTime) {
+                activeLine = lines[i];
+                break;
             }
         }
         
-        ctx.shadowBlur = 0;
+        lines.forEach(line => line.classList.remove('active'));
+        
+        if (activeLine) {
+            activeLine.classList.add('active');
+            
+            const lineRect = activeLine.getBoundingClientRect();
+            const containerRect = fullscreenLyricsContent.getBoundingClientRect();
+            
+            if (lineRect.top < containerRect.top || lineRect.bottom > containerRect.bottom) {
+                const lineTop = activeLine.offsetTop;
+                const lineHeight = activeLine.offsetHeight;
+                const containerHeight = fullscreenLyricsContent.clientHeight;
+                const targetScroll = lineTop - (containerHeight / 2) + (lineHeight / 2);
+                
+                fullscreenLyricsContent.scrollTo({ 
+                    top: targetScroll,
+                    behavior: 'smooth'
+                });
+            }
+        }
     }
-    
-    drawEdgeVisualizer();
-}
 
-function stopLyricsEdgeVisualizer() {
-    if (lyricsVizAnimationId) {
-        cancelAnimationFrame(lyricsVizAnimationId);
-        lyricsVizAnimationId = null;
+    function startLyricsEdgeVisualizer() {
+        if (!analyser || !dataArray) return;
+        
+        const ctx = fullscreenLyricsVizCanvas.getContext('2d');
+        
+        function drawEdgeVisualizer() {
+            if (!fullscreenLyricsActive) {
+                lyricsVizAnimationId = null;
+                return;
+            }
+            
+            lyricsVizAnimationId = requestAnimationFrame(drawEdgeVisualizer);
+            
+            analyser.getByteFrequencyData(dataArray);
+            
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+            ctx.fillRect(0, 0, fullscreenLyricsVizCanvas.width, fullscreenLyricsVizCanvas.height);
+            
+            const width = fullscreenLyricsVizCanvas.width;
+            const height = fullscreenLyricsVizCanvas.height;
+            const barCount = 240;
+            const barThickness = 6;
+            const maxBarLength = 100;
+            
+            for (let i = 0; i < barCount; i++) {
+                const dataIndex = Math.floor((i / barCount) * bufferLength);
+                const value = dataArray[dataIndex] / 255;
+                const barLength = value * maxBarLength;
+                
+                let hue;
+                if (currentDominantColor) {
+                    const { r, g, b } = currentDominantColor;
+                    const baseHue = Math.atan2(Math.sqrt(3) * (g - b), 2 * r - g - b) * (180 / Math.PI);
+                    const normalizedHue = baseHue < 0 ? baseHue + 360 : baseHue;
+                    hue = normalizedHue + (i / barCount) * 40;
+                } else {
+                    hue = (i / barCount) * 360;
+                }
+                const color = `hsl(${hue}, 100%, 60%)`;
+                
+                ctx.fillStyle = color;
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = color;
+                
+                const perimeter = 2 * (width + height);
+                const position = (i / barCount) * perimeter;
+                
+                if (position < width) {
+                    const x = position;
+                    ctx.fillRect(x, 0, barThickness, barLength);
+                } else if (position < width + height) {
+                    const y = position - width;
+                    ctx.fillRect(width - barLength, y, barLength, barThickness);
+                } else if (position < 2 * width + height) {
+                    const x = width - (position - width - height);
+                    ctx.fillRect(x, height - barLength, barThickness, barLength);
+                } else {
+                    const y = height - (position - 2 * width - height);
+                    ctx.fillRect(0, y, barLength, barThickness);
+                }
+            }
+            
+            ctx.shadowBlur = 0;
+        }
+        
+        drawEdgeVisualizer();
     }
-}
 
-// Event handlers
-fullscreenLyricsToggle.onclick = () => {
-    toggleFullscreenLyrics(!fullscreenLyricsActive);
-};
-
-lyricsCloseBtn.onclick = () => {
-    toggleFullscreenLyrics(false);
-};
-
-lyricsPrevBtn.onclick = () => {
-    if (!prevButton.disabled) {
-        playPrevious();
+    function stopLyricsEdgeVisualizer() {
+        if (lyricsVizAnimationId) {
+            cancelAnimationFrame(lyricsVizAnimationId);
+            lyricsVizAnimationId = null;
+        }
     }
-};
 
-lyricsNextBtn.onclick = () => {
-    if (!nextButton.disabled) {
-        playNext();
-    }
-};
+    // Event handlers
+    fullscreenLyricsToggle.onclick = () => {
+        console.log('🎤 Button clicked! Current state:', fullscreenLyricsActive);
+        toggleFullscreenLyrics(!fullscreenLyricsActive);
+    };
 
-// ESC key to close
-document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && fullscreenLyricsActive) {
-        e.preventDefault();
+    lyricsCloseBtn.onclick = () => {
         toggleFullscreenLyrics(false);
-    }
-});
+    };
 
-// Update lyrics highlight during playback
-player.addEventListener('timeupdate', () => {
-    if (fullscreenLyricsActive) {
-        updateFullscreenLyricsHighlight();
-    }
-});
+    lyricsPrevBtn.onclick = () => {
+        if (!prevButton.disabled) {
+            playPrevious();
+        }
+    };
 
-// Handle window resize
-window.addEventListener('resize', () => {
-    if (fullscreenLyricsActive) {
-        fullscreenLyricsVizCanvas.width = window.innerWidth;
-        fullscreenLyricsVizCanvas.height = window.innerHeight;
-    }
-});
+    lyricsNextBtn.onclick = () => {
+        if (!nextButton.disabled) {
+            playNext();
+        }
+    };
 
-debugLog('Fullscreen lyrics system initialized', 'success');
-// ========== END FULLSCREEN LYRICS WITH EDGE VISUALIZER ==========
+    // ESC key to close
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && fullscreenLyricsActive) {
+            e.preventDefault();
+            toggleFullscreenLyrics(false);
+        }
+    });
 
+    // Update lyrics highlight during playback
+    player.addEventListener('timeupdate', () => {
+        if (fullscreenLyricsActive) {
+            updateFullscreenLyricsHighlight();
+        }
+    });
+
+    // Handle window resize
+    window.addEventListener('resize', () => {
+        if (fullscreenLyricsActive) {
+            fullscreenLyricsVizCanvas.width = window.innerWidth;
+            fullscreenLyricsVizCanvas.height = window.innerHeight;
+        }
+    });
+
+    console.log('✅ Fullscreen lyrics system initialized successfully');
+
+} catch (error) {
+    console.error('❌ Fullscreen lyrics initialization failed:', error);
+    console.error('Stack:', error.stack);
+}
+// ========== END FULLSCREEN LYRICS ==========
+    
     // ========== SMART PLAYLIST INTEGRATION ==========
 
 let analyzedTracks = [];
