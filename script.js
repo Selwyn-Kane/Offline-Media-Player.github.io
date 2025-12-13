@@ -3442,9 +3442,6 @@ try {
 
     console.log('✅ Fullscreen lyrics elements found, attaching handlers...');
 
-    let fullscreenLyricsActive = false;
-    let lyricsVizAnimationId = null;
-
     function toggleFullscreenLyrics(show) {
         console.log('🎤 toggleFullscreenLyrics called with:', show);
         fullscreenLyricsActive = show;
