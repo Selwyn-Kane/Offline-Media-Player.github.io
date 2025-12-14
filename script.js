@@ -11,6 +11,7 @@ let audioPresetsManager = null;
 let metadataEditor = null;
 let analyzer = null;          // ✅ ADD THIS
 let generator = null;         // ✅ ADD THIS
+let analysisParser = null;
 
 // Playlist data
 let playlist = [];
@@ -67,6 +68,7 @@ document.addEventListener('DOMContentLoaded', () => {
     errorRecovery = new ErrorRecovery(debugLog);
     vttParser = new VTTParser(debugLog);
     metadataEditor = new MetadataEditor(debugLog);
+    analysisParser = new AnalysisTextParser(debugLog);
 
       // ✅ ADD THESE TWO LINES HERE:
     analyzer = new MusicAnalyzer(debugLog);
@@ -447,6 +449,19 @@ function extractDominantColor(imageUrl) {
         
         // --- Audio Visualizer Functions ---
        function setupAudioContext() {
+    console.log('setupAudioContext called, audioContext exists?', !!audioContext);
+    console.log('autoEQManager exists?', !!autoEQManager);
+    
+    if (audioContext) {
+        console.log('Audio context already exists, returning early');
+        // Audio context already exists, but ensure autoEQManager exists
+        if (!autoEQManager && audioPresetsManager) {
+            console.log('Creating autoEQManager (late initialization)');
+            autoEQManager = new AutoEQManager(audioPresetsManager, debugLog);
+            debugLog('✅ Auto-EQ system initialized (late)', 'success');
+        }
+        return;
+    }
     if (audioContext) return; // Already set up
     
     try {
@@ -621,11 +636,7 @@ if ('serviceWorker' in navigator) {
     });
 }
 
-function getMoodColorFromAnalysis(mood) {
-    if (!mood) return { r: 220, g: 53, b: 69 }; // Default red if no mood
-    
-    const moodKey = mood.toLowerCase();
-    
+    function getMoodColorFromAnalysis(mood) {
     const moodColors = {
         'energetic': { r: 255, g: 87, b: 51 },    // Red-Orange
         'calm': { r: 51, g: 153, b: 255 },        // Blue
@@ -634,7 +645,7 @@ function getMoodColorFromAnalysis(mood) {
         'neutral': { r: 220, g: 53, b: 69 }       // Default red
     };
     
-    return moodColors[moodKey] || moodColors.neutral;
+    return moodColors[mood] || moodColors.neutral;
 }
 
 function handleWidgetCommand(action) {
@@ -1005,7 +1016,7 @@ exportLyricsButton.oncontextmenu = (e) => {
         if (index === currentTrackIndex) {
             item.classList.add('playing');
         }
-    
+
         const thumbnail = document.createElement('div');
         thumbnail.className = 'playlist-item-thumbnail';
         
@@ -1037,6 +1048,7 @@ exportLyricsButton.oncontextmenu = (e) => {
 
 // ✅ NEW: Apply mood-based background color if analysis exists
 if (track.analysis && track.analysis.mood) {
+    const moodKey = track.analysis.mood.toLowerCase();
     const moodColor = getMoodColorFromAnalysis(track.analysis.mood);
     const { r, g, b } = moodColor;
     
@@ -1066,10 +1078,9 @@ moodBadge.style.cssText = `
     background: rgba(${r}, ${g}, ${b}, 0.3);
     color: rgb(${Math.min(255, r + 50)}, ${Math.min(255, g + 50)}, ${Math.min(255, b + 50)});
     border: 1px solid rgb(${r}, ${g}, ${b});
-`;
+`; 
 
 // FIX: Convert to lowercase for emoji lookup
-const moodKey = track.analysis.mood.toLowerCase();
 const moodEmoji = moodEmojis[moodKey] || '🎵';
 moodBadge.textContent = `${moodEmoji} ${track.analysis.mood}`;
     
@@ -1189,16 +1200,21 @@ function updateJumpButton() {
     while (player.firstChild) {
         player.removeChild(player.firstChild);
     }
-    // Note: We don't revoke the URL here anymore since it's stored in the playlist
-
+    
     // Clear old cues
     cues = [];
-
+    
     // Display metadata
     displayMetadata(track.metadata);
-          // Apply Auto-EQ if enabled
-        if (autoEQManager && autoEQManager.enabled) {
-            autoEQManager.applyAutoEQ(track);
+    
+    // ✅ FIX: Initialize audio system BEFORE playback
+    if (!audioContext) {
+        setupAudioContext();
+    }
+    
+    // Apply Auto-EQ if enabled
+    if (autoEQManager && autoEQManager.enabled) {
+        autoEQManager.applyAutoEQ(track);
     }
 
      // ✅ NEW: Pass analysis data to visualizer if available
@@ -1569,37 +1585,20 @@ window.handleFileLoad = async function handleFileLoad(event) {
         }
         
         // Extract metadata from file
-let metadata = await metadataParser.extractMetadata(audioFile);
-
-// ✅ ENSURE NO UNDEFINED VALUES
-if (!metadata || !metadata.title || !metadata.artist) {
-    metadata = {
-        title: metadata?.title || baseName,
-        artist: metadata?.artist || 'Unknown Artist',
-        album: metadata?.album || 'Unknown Album',
-        image: metadata?.image || null,
-        hasMetadata: false
-    };
-    debugLog(`⚠️ Using filename as metadata for: ${audioFile.name}`, 'warning');
-}
-
-// Check if we have custom metadata for this file
-const customMeta = customMetadataStore.get(audioFile.name, audioFile.size);
-if (customMeta) {
-    metadata = {
-        ...metadata,
-        ...customMeta,
-        image: metadata.image || customMeta.image,
-        hasMetadata: true,
-        isCustom: true
-    };
-    debugLog(`✏️ Using custom metadata for: ${audioFile.name}`, 'info');
-}
-
-// ✅ FINAL SAFETY CHECK - Ensure no undefined values
-metadata.title = metadata.title || baseName;
-metadata.artist = metadata.artist || 'Unknown Artist';
-metadata.album = metadata.album || 'Unknown Album';
+        let metadata = await metadataParser.extractMetadata(audioFile);
+        
+        // Check if we have custom metadata for this file
+        const customMeta = customMetadataStore.get(audioFile.name, audioFile.size);
+        if (customMeta) {
+            metadata = {
+                ...metadata,
+                ...customMeta,
+                image: metadata.image || customMeta.image,
+                hasMetadata: true,
+                isCustom: true
+            };
+            debugLog(`✏️ Using custom metadata for: ${audioFile.name}`, 'info');
+        }
 
         // Create audio element to get duration
         const tempAudio = new Audio();
@@ -1626,24 +1625,21 @@ metadata.album = metadata.album || 'Unknown Album';
         // ✅ NEW: Prefer deep analysis over cached analysis
         const finalAnalysis = parsedAnalysis || analyzer.analysisCache.get(audioFile.name);
         
-// ✅ FIX: Ensure metadata has valid values (object with undefined !== falsy!)
-const validMetadata = {
-    title: metadata?.title || baseName,
-    artist: metadata?.artist || 'Unknown Artist',
-    album: metadata?.album || 'Unknown Album',
-    image: metadata?.image || null,
-    hasMetadata: !!(metadata?.title && metadata?.artist)
-};
-
-playlist.push({ 
-    audioURL: audioURL,
-    fileName: audioFile.name,
-    vtt: matchingVtt || null,
-    metadata: validMetadata,
-    duration: duration,
-    analysis: finalAnalysis,
-    hasDeepAnalysis: !!parsedAnalysis
-});
+        playlist.push({ 
+            audioURL: audioURL,
+            fileName: audioFile.name,
+            vtt: matchingVtt || null,
+            metadata: metadata || {
+                title: audioFile.name.split('.')[0],
+                artist: 'Unknown Artist',
+                album: 'Unknown Album',
+                image: null,
+                hasMetadata: false
+            },
+            duration: duration,
+            analysis: finalAnalysis,  // ✅ Use deep analysis if available
+            hasDeepAnalysis: !!parsedAnalysis  // ✅ NEW: Flag for deep analysis
+        });
         
         if (finalAnalysis) {
             const source = parsedAnalysis ? 'deep analysis file' : 'cache';
@@ -1987,9 +1983,21 @@ if (crossfadeButton) {
 const autoEQButton = document.getElementById('auto-eq-button');
 if (autoEQButton) {
     autoEQButton.onclick = () => {
-        // ✅ ADD THIS CHECK
+        // ✅ Better check: test if track is loaded
+        if (currentTrackIndex === -1 || playlist.length === 0) {
+            alert('Please load a track first!');
+            return;
+        }
+        
+        // ✅ Initialize audio system if needed
+        if (!audioContext) {
+            setupAudioContext();
+        }
+        
+        // Now autoEQManager should exist
         if (!autoEQManager) {
-            alert('Please play a track first to initialize the audio system!');
+            console.error('autoEQManager failed to initialize!');
+            alert('Audio system initialization failed. Try playing the track first.');
             return;
         }
         
