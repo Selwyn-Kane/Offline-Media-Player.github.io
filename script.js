@@ -34,6 +34,7 @@ let dataArray = null;
 let bufferLength = null;
 let visualizerAnimationId = null;
 let visualizerEnabled = true;
+let volumeControl = null;
 
 // Equalizer
 let bassFilter = null;
@@ -43,7 +44,6 @@ let trebleFilter = null;
 // UI state
 let debugMode = false;
 let isSeekingProg = false;
-let lastVolume = 1;
 let compactMode = 'full';
 
 // Canvas (initialized after DOM loads)
@@ -63,6 +63,12 @@ let backgroundAnalysisRunning = false;
 
 document.addEventListener('DOMContentLoaded', () => {
 
+    // Initialize custom metadata store
+    const customMetadataStore = new CustomMetadataStore();
+
+    // Initialize folder persistence
+    const folderPersistence = new FolderPersistence();
+
     // NOW initialize parsers (after they're declared)
     metadataParser = new MetadataParser(debugLog);
     errorRecovery = new ErrorRecovery(debugLog);
@@ -75,178 +81,6 @@ document.addEventListener('DOMContentLoaded', () => {
 generator = new SmartPlaylistGenerator(analyzer, debugLog);
     debugLog('✅ Smart playlist system initialized', 'success');
 
-    // ========== CUSTOM METADATA STORAGE SYSTEM ==========
-
-class CustomMetadataStore {
-    constructor() {
-        this.storageKey = 'customMetadata';
-        this.store = this.load();
-    }
-    
-    /**
-     * Generate a unique key for a file
-     */
-    generateKey(fileName, fileSize) {
-        return `${fileName}_${fileSize}`;
-    }
-    
-    /**
-     * Save custom metadata for a file
-     */
-    save(fileName, fileSize, metadata) {
-        const key = this.generateKey(fileName, fileSize);
-        this.store[key] = {
-            ...metadata,
-            savedAt: Date.now()
-        };
-        this.persist();
-        console.log(`✅ Custom metadata saved for: ${fileName}`);
-    }
-    
-    /**
-     * Get custom metadata for a file
-     */
-    get(fileName, fileSize) {
-        const key = this.generateKey(fileName, fileSize);
-        return this.store[key] || null;
-    }
-    
-    /**
-     * Check if file has custom metadata
-     */
-    has(fileName, fileSize) {
-        const key = this.generateKey(fileName, fileSize);
-        return key in this.store;
-    }
-    
-    /**
-     * Delete custom metadata for a file
-     */
-    delete(fileName, fileSize) {
-        const key = this.generateKey(fileName, fileSize);
-        delete this.store[key];
-        this.persist();
-    }
-    
-    /**
-     * Load from localStorage
-     */
-    load() {
-        try {
-            const saved = localStorage.getItem(this.storageKey);
-            return saved ? JSON.parse(saved) : {};
-        } catch (err) {
-            console.error('Failed to load custom metadata:', err);
-            return {};
-        }
-    }
-    
-    /**
-     * Persist to localStorage
-     */
-    persist() {
-        try {
-            localStorage.setItem(this.storageKey, JSON.stringify(this.store));
-        } catch (err) {
-            console.error('Failed to save custom metadata:', err);
-        }
-    }
-    
-    /**
-     * Get all stored metadata (for debugging)
-     */
-    getAll() {
-        return { ...this.store };
-    }
-    
-    /**
-     * Clear all custom metadata
-     */
-    clearAll() {
-        this.store = {};
-        this.persist();
-        console.log('🗑️ All custom metadata cleared');
-    }
-}
-
-// Initialize custom metadata store
-const customMetadataStore = new CustomMetadataStore();
-
-// ========== END CUSTOM METADATA STORAGE ==========
-
-    // ========== FOLDER PERSISTENCE SYSTEM ==========
-
-// IndexedDB helper for storing folder handle
-const DB_NAME = 'MusicPlayerDB';
-const DB_VERSION = 1;
-const STORE_NAME = 'folderHandles';
-
-async function openDB() {
-    return new Promise((resolve, reject) => {
-        const request = indexedDB.open(DB_NAME, DB_VERSION);
-        
-        request.onerror = () => reject(request.error);
-        request.onsuccess = () => resolve(request.result);
-        
-        request.onupgradeneeded = (event) => {
-            const db = event.target.result;
-            if (!db.objectStoreNames.contains(STORE_NAME)) {
-                db.createObjectStore(STORE_NAME);
-            }
-        };
-    });
-}
-
-async function saveFolderHandle(handle) {
-    try {
-        const db = await openDB();
-        const transaction = db.transaction([STORE_NAME], 'readwrite');
-        const store = transaction.objectStore(STORE_NAME);
-        
-        await store.put(handle, 'musicFolder');
-        
-        debugLog('Folder handle saved to IndexedDB', 'success');
-        localStorage.setItem('hasSavedFolder', 'true');
-} catch (err) {
-        const recovery = errorRecovery.handleStorageError(err, 'saveFolderHandle');
-        debugLog(`Storage error: ${recovery.message}`, 'error');
-    }
-}
-
-async function loadFolderHandle() {
-    try {
-        const db = await openDB();
-        const transaction = db.transaction([STORE_NAME], 'readonly');
-        const store = transaction.objectStore(STORE_NAME);
-        
-        return new Promise((resolve, reject) => {
-            const request = store.get('musicFolder');
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error);
-        });
-    } catch (err) {
-        debugLog(`Failed to load folder handle: ${err.message}`, 'error');
-        return null;
-    }
-}
-
-async function verifyFolderPermission(handle) {
-    const options = { mode: 'read' };
-    
-    // Check if we already have permission
-    if ((await handle.queryPermission(options)) === 'granted') {
-        return true;
-    }
-    
-    // Request permission
-    if ((await handle.requestPermission(options)) === 'granted') {
-        return true;
-    }
-    
-    return false;
-}
-
-// ========== END FOLDER PERSISTENCE SYSTEM ==========
     
         // --- Core Variables ---
         const player = document.getElementById('audio-player');
@@ -293,6 +127,9 @@ async function verifyFolderPermission(handle) {
         const eqResetBtn = document.getElementById('eq-reset');
         const perfManager = new PerformanceManager(debugLog);
         debugLog('✅ Performance manager initialized', 'success');
+
+    // Initialize volume control
+    volumeControl = new VolumeControl(player, debugLog);
 
     // Initialize custom background manager
 if (typeof CustomBackgroundManager !== 'undefined') {
@@ -2087,17 +1924,9 @@ if (djModeButton) {
                     e.preventDefault();
                     if (!prevButton.disabled) playPrevious();
                     break;
-                case 'm':
+case 'm':
 case 'M':
-    if (player.muted) {
-        player.muted = false;
-        player.volume = lastVolume;
-        volumeSlider.value = lastVolume;
-    } else {
-        lastVolume = player.volume;
-        player.muted = true;
-    }
-    updateVolumeUI();
+    volumeControl.toggleMute();
     break;
                 case 'c':
                 case 'C':
@@ -2154,7 +1983,7 @@ folderButton.onclick = async () => {
         debugLog(`Folder selected: ${folderHandle.name}`, 'success');
         
         // Save the folder handle for next time
-        await saveFolderHandle(folderHandle);
+        await folderPersistence.saveFolderHandle(folderHandle);
         
         // Update button to show folder is selected
         folderButton.textContent = `📁 ${folderHandle.name} (Click to reload)`;
@@ -2182,12 +2011,7 @@ const clearFolderButton = document.getElementById('clear-folder-button');
 clearFolderButton.onclick = async () => {
     if (confirm('Forget the saved music folder? You\'ll need to select it again next time.')) {
         try {
-            const db = await openDB();
-            const transaction = db.transaction([STORE_NAME], 'readwrite');
-            const store = transaction.objectStore(STORE_NAME);
-            await store.delete('musicFolder');
-            
-            localStorage.removeItem('hasSavedFolder');
+            await folderPersistence.deleteFolderHandle();
             folderHandle = null;
             
             folderButton.textContent = '📁 Select Music Folder';
@@ -2286,109 +2110,6 @@ async function loadFromFolder() {
     updateSmartPlaylistButton();
 }
         
-       // --- Volume Control System ---
-const volumeSlider = document.getElementById('volume-slider');
-const volumeIcon = document.getElementById('volume-icon');
-const volumePercentage = document.getElementById('volume-percentage');
-
-// Load saved volume
-const savedVolume = localStorage.getItem('playerVolume');
-if (savedVolume) {
-    player.volume = parseFloat(savedVolume);
-    volumeSlider.value = player.volume;
-} else {
-    player.volume = 1;
-    volumeSlider.value = 1;
-}
-
-// Update UI function
-function updateVolumeUI() {
-    const volume = player.volume;
-    const percent = Math.round(volume * 100);
-    
-    // Update percentage display
-    volumePercentage.textContent = `${percent}%`;
-    
-    // Update slider track color (for webkit browsers)
-    volumeSlider.style.setProperty('--volume-percent', `${percent}%`);
-    
-    // Update icon based on volume level
-    if (player.muted || volume === 0) {
-        volumeIcon.textContent = '🔇';
-    } else if (volume < 0.3) {
-        volumeIcon.textContent = '🔈';
-    } else if (volume < 0.7) {
-        volumeIcon.textContent = '🔉';
-    } else {
-        volumeIcon.textContent = '🔊';
-    }
-    
-    debugLog(`Volume: ${percent}%${player.muted ? ' (Muted)' : ''}`);
-}
-
-// Slider input handler
-volumeSlider.oninput = (e) => {
-    const newVolume = parseFloat(e.target.value);
-    player.volume = newVolume;
-    if (player.muted && newVolume > 0) {
-        player.muted = false;
-    }
-    updateVolumeUI();
-};
-
-    volumeSlider.addEventListener('wheel', (e) => {
-    e.preventDefault();
-    const delta = e.deltaY > 0 ? -0.05 : 0.05; // Scroll down = quieter, up = louder
-    const newVolume = Math.max(0, Math.min(1, player.volume + delta));
-    player.volume = newVolume;
-    volumeSlider.value = newVolume;
-    if (player.muted && newVolume > 0) {
-        player.muted = false;
-    }
-    updateVolumeUI();
-});
-
-// Icon click to mute/unmute
-volumeIcon.onclick = () => {
-    if (player.muted) {
-        player.muted = false;
-        player.volume = lastVolume;
-        volumeSlider.value = lastVolume;
-    } else {
-        lastVolume = player.volume;
-        player.muted = true;
-    }
-    updateVolumeUI();
-};
-
-// Save volume changes (debounced)
-let volumeSaveTimeout;
-player.addEventListener('volumechange', () => {
-    // Update UI immediately for responsiveness
-    const volume = player.volume;
-    const percent = Math.round(volume * 100);
-    volumePercentage.textContent = `${percent}%`;
-    volumeSlider.style.setProperty('--volume-percent', `${percent}%`);
-    
-    // Update icon based on volume level
-    if (player.muted || volume === 0) {
-        volumeIcon.textContent = '🔇';
-    } else if (volume < 0.3) {
-        volumeIcon.textContent = '🔈';
-    } else if (volume < 0.7) {
-        volumeIcon.textContent = '🔉';
-    } else {
-        volumeIcon.textContent = '🔊';
-    }
-    
-    // Debounce localStorage writes and debug logs
-    clearTimeout(volumeSaveTimeout);
-    volumeSaveTimeout = setTimeout(() => {
-        localStorage.setItem('playerVolume', player.volume);
-        debugLog(`Volume: ${percent}%${player.muted ? ' (Muted)' : ''}`);
-    }, 500);
-});
-        
         // Initial setup
         window.addEventListener('load', async () => {
             // Auto-reload checkbox setup
@@ -2410,17 +2131,17 @@ autoReloadCheck.onchange = () => {
 };
     // NEW: Check if we have a saved folder and auto-load it
 // NEW: Check if we have a saved folder and auto-load it
-if (autoReload && localStorage.getItem('hasSavedFolder') === 'true') {
+if (autoReload && folderPersistence.hasSavedFolder()) {
     debugLog('Checking for saved folder...', 'info');
     
     try {
-        const savedHandle = await loadFolderHandle();
+        const savedHandle = await folderPersistence.loadFolderHandle();
         
         if (savedHandle) {
             debugLog(`Found saved folder: ${savedHandle.name}`, 'info');
             
             // Verify we still have permission
-            const hasPermission = await verifyFolderPermission(savedHandle);
+            const hasPermission = await folderPersistence.verifyFolderPermission(savedHandle);
             
             if (hasPermission) {
                 folderHandle = savedHandle;
@@ -2440,7 +2161,7 @@ if (autoReload && localStorage.getItem('hasSavedFolder') === 'true') {
                 
             } else {
                 debugLog('Permission denied for saved folder', 'warning');
-                localStorage.removeItem('hasSavedFolder');
+                folderPersistence.deleteFolderHandle();
                 
                 // Show a notification
                 playlistStatus.textContent = `Previous folder "${savedHandle.name}" needs permission - click "📁 Select Music Folder" to reload`;
@@ -2448,7 +2169,7 @@ if (autoReload && localStorage.getItem('hasSavedFolder') === 'true') {
         }
     } catch (err) {
         debugLog(`Error loading saved folder: ${err.message}`, 'error');
-        localStorage.removeItem('hasSavedFolder');
+        folderPersistence.deleteFolderHandle();
     }
     analyzer.loadAnalysesFromStorage();
 debugLog('Loaded cached music analysis', 'info');
