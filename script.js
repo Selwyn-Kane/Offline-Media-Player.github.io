@@ -621,7 +621,11 @@ if ('serviceWorker' in navigator) {
     });
 }
 
-    function getMoodColorFromAnalysis(mood) {
+function getMoodColorFromAnalysis(mood) {
+    if (!mood) return { r: 220, g: 53, b: 69 }; // Default red if no mood
+    
+    const moodKey = mood.toLowerCase();
+    
     const moodColors = {
         'energetic': { r: 255, g: 87, b: 51 },    // Red-Orange
         'calm': { r: 51, g: 153, b: 255 },        // Blue
@@ -630,7 +634,7 @@ if ('serviceWorker' in navigator) {
         'neutral': { r: 220, g: 53, b: 69 }       // Default red
     };
     
-    return moodColors[mood] || moodColors.neutral;
+    return moodColors[moodKey] || moodColors.neutral;
 }
 
 function handleWidgetCommand(action) {
@@ -1047,23 +1051,27 @@ if (track.analysis && track.analysis.mood) {
     item.style.background = `linear-gradient(90deg, rgb(${darkerR}, ${darkerG}, ${darkerB}) 0%, rgb(${lighterR}, ${lighterG}, ${lighterB}) 100%)`;
     item.style.borderColor = `rgb(${r}, ${g}, ${b})`;
     
-    // Add mood indicator badge
-    const moodEmojis = {
-        'energetic': '⚡',
-        'calm': '🌊',
-        'bright': '☀️',
-        'dark': '🌙',
-        'neutral': '🎵'
-    };
-    
-    const moodBadge = document.createElement('span');
-    moodBadge.className = 'badge badge-mood';
-    moodBadge.style.cssText = `
-        background: rgba(${r}, ${g}, ${b}, 0.3);
-        color: rgb(${Math.min(255, r + 50)}, ${Math.min(255, g + 50)}, ${Math.min(255, b + 50)});
-        border: 1px solid rgb(${r}, ${g}, ${b});
-    `;
-    moodBadge.textContent = `${moodEmojis[track.analysis.mood]} ${track.analysis.mood}`;
+// Add mood indicator badge
+const moodEmojis = {
+    'energetic': '⚡',
+    'calm': '🌊',
+    'bright': '☀️',
+    'dark': '🌙',
+    'neutral': '🎵'
+};
+
+const moodBadge = document.createElement('span');
+moodBadge.className = 'badge badge-mood';
+moodBadge.style.cssText = `
+    background: rgba(${r}, ${g}, ${b}, 0.3);
+    color: rgb(${Math.min(255, r + 50)}, ${Math.min(255, g + 50)}, ${Math.min(255, b + 50)});
+    border: 1px solid rgb(${r}, ${g}, ${b});
+`;
+
+// FIX: Convert to lowercase for emoji lookup
+const moodKey = track.analysis.mood.toLowerCase();
+const moodEmoji = moodEmojis[moodKey] || '🎵';
+moodBadge.textContent = `${moodEmoji} ${track.analysis.mood}`;
     
     const badgesDiv = infoDiv.querySelector('.playlist-item-badges') || (() => {
         const div = document.createElement('div');
@@ -1561,20 +1569,37 @@ window.handleFileLoad = async function handleFileLoad(event) {
         }
         
         // Extract metadata from file
-        let metadata = await metadataParser.extractMetadata(audioFile);
-        
-        // Check if we have custom metadata for this file
-        const customMeta = customMetadataStore.get(audioFile.name, audioFile.size);
-        if (customMeta) {
-            metadata = {
-                ...metadata,
-                ...customMeta,
-                image: metadata.image || customMeta.image,
-                hasMetadata: true,
-                isCustom: true
-            };
-            debugLog(`✏️ Using custom metadata for: ${audioFile.name}`, 'info');
-        }
+let metadata = await metadataParser.extractMetadata(audioFile);
+
+// ✅ ENSURE NO UNDEFINED VALUES
+if (!metadata || !metadata.title || !metadata.artist) {
+    metadata = {
+        title: metadata?.title || baseName,
+        artist: metadata?.artist || 'Unknown Artist',
+        album: metadata?.album || 'Unknown Album',
+        image: metadata?.image || null,
+        hasMetadata: false
+    };
+    debugLog(`⚠️ Using filename as metadata for: ${audioFile.name}`, 'warning');
+}
+
+// Check if we have custom metadata for this file
+const customMeta = customMetadataStore.get(audioFile.name, audioFile.size);
+if (customMeta) {
+    metadata = {
+        ...metadata,
+        ...customMeta,
+        image: metadata.image || customMeta.image,
+        hasMetadata: true,
+        isCustom: true
+    };
+    debugLog(`✏️ Using custom metadata for: ${audioFile.name}`, 'info');
+}
+
+// ✅ FINAL SAFETY CHECK - Ensure no undefined values
+metadata.title = metadata.title || baseName;
+metadata.artist = metadata.artist || 'Unknown Artist';
+metadata.album = metadata.album || 'Unknown Album';
 
         // Create audio element to get duration
         const tempAudio = new Audio();
@@ -1601,21 +1626,24 @@ window.handleFileLoad = async function handleFileLoad(event) {
         // ✅ NEW: Prefer deep analysis over cached analysis
         const finalAnalysis = parsedAnalysis || analyzer.analysisCache.get(audioFile.name);
         
-        playlist.push({ 
-            audioURL: audioURL,
-            fileName: audioFile.name,
-            vtt: matchingVtt || null,
-            metadata: metadata || {
-                title: audioFile.name.split('.')[0],
-                artist: 'Unknown Artist',
-                album: 'Unknown Album',
-                image: null,
-                hasMetadata: false
-            },
-            duration: duration,
-            analysis: finalAnalysis,  // ✅ Use deep analysis if available
-            hasDeepAnalysis: !!parsedAnalysis  // ✅ NEW: Flag for deep analysis
-        });
+// ✅ FIX: Ensure metadata has valid values (object with undefined !== falsy!)
+const validMetadata = {
+    title: metadata?.title || baseName,
+    artist: metadata?.artist || 'Unknown Artist',
+    album: metadata?.album || 'Unknown Album',
+    image: metadata?.image || null,
+    hasMetadata: !!(metadata?.title && metadata?.artist)
+};
+
+playlist.push({ 
+    audioURL: audioURL,
+    fileName: audioFile.name,
+    vtt: matchingVtt || null,
+    metadata: validMetadata,
+    duration: duration,
+    analysis: finalAnalysis,
+    hasDeepAnalysis: !!parsedAnalysis
+});
         
         if (finalAnalysis) {
             const source = parsedAnalysis ? 'deep analysis file' : 'cache';

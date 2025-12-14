@@ -157,41 +157,43 @@ class VisualizerManager {
         this.colorCache.current = this.colorCache.albumArt || this.colorCache.mood;
     }
     
-    getMoodColors() {
-        if (!this.currentAnalysis) {
-            return { primary: [340, 80, 50], secondary: [340, 80, 30], accent: [340, 100, 60] };
-        }
-        
-        const moodPalettes = {
-            'energetic': { 
-                primary: [0, 100, 60], 
-                secondary: [30, 100, 50], 
-                accent: [15, 100, 70] 
-            },
-            'calm': { 
-                primary: [200, 70, 50], 
-                secondary: [220, 70, 40], 
-                accent: [210, 80, 60] 
-            },
-            'bright': { 
-                primary: [50, 100, 60], 
-                secondary: [60, 100, 50], 
-                accent: [55, 100, 70] 
-            },
-            'dark': { 
-                primary: [270, 60, 40], 
-                secondary: [280, 60, 30], 
-                accent: [275, 70, 50] 
-            },
-            'neutral': { 
-                primary: [340, 80, 50], 
-                secondary: [340, 80, 30], 
-                accent: [340, 90, 60] 
-            }
-        };
-        
-        return moodPalettes[this.currentAnalysis.mood] || moodPalettes.neutral;
+getMoodColors() {
+    if (!this.currentAnalysis || !this.currentAnalysis.mood) {
+        return { primary: [340, 80, 50], secondary: [340, 80, 30], accent: [340, 100, 60] };
     }
+    
+    const moodKey = this.currentAnalysis.mood.toLowerCase();
+    
+    const moodPalettes = {
+        'energetic': { 
+            primary: [0, 100, 60], 
+            secondary: [30, 100, 50], 
+            accent: [15, 100, 70] 
+        },
+        'calm': { 
+            primary: [200, 70, 50], 
+            secondary: [220, 70, 40], 
+            accent: [210, 80, 60] 
+        },
+        'bright': { 
+            primary: [50, 100, 60], 
+            secondary: [60, 100, 50], 
+            accent: [55, 100, 70] 
+        },
+        'dark': { 
+            primary: [270, 60, 40], 
+            secondary: [280, 60, 30], 
+            accent: [275, 70, 50] 
+        },
+        'neutral': { 
+            primary: [340, 80, 50], 
+            secondary: [340, 80, 30], 
+            accent: [340, 90, 60] 
+        }
+    };
+    
+    return moodPalettes[moodKey] || moodPalettes.neutral;
+}
     
     getAlbumArtColor() {
         if (!window.currentDominantColor) return null;
