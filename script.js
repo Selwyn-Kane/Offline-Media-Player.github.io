@@ -12,16 +12,13 @@ let metadataEditor = null;
 let analyzer = null;          // ✅ ADD THIS
 let generator = null;         // ✅ ADD THIS
 let analysisParser = null;
+let lyricsManager = null;
 
 // Playlist data
 let playlist = [];
 let currentTrackIndex = -1;
 let isShuffled = false;
 let loopMode = 'off';
-
-// Lyrics
-let cues = [];
-let cachedLyricLines = [];
 
 // Folder
 let folderHandle = null;
@@ -57,8 +54,6 @@ let djModeManager = null;
 // Color extraction cache (CRITICAL - was missing!)
 const colorCache = new Map();
 
-let fullscreenLyricsActive = false;
-let lyricsVizAnimationId = null;
 let backgroundAnalysisRunning = false;
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -66,8 +61,23 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize custom metadata store
     const customMetadataStore = new CustomMetadataStore();
 
-    // Initialize folder persistence
-    const folderPersistence = new FolderPersistence();
+    // Initialize folder persistence with enhanced features
+const folderPersistence = new FolderPersistence();
+
+// Display storage stats in debug mode
+folderPersistence.getStats().then(stats => {
+    if (stats) {
+        debugLog(`💾 Storage: ${stats.percentUsed}% used | ${stats.historyCount} folders in history`, 'info');
+        if (stats.hasSavedFolder) {
+            debugLog(`📁 Saved folder: "${stats.folderName}" (${stats.trackCount} tracks)`, 'success');
+        }
+    }
+});
+
+    analyzer = new MusicAnalyzer(debugLog);
+    generator = new SmartPlaylistGenerator(analyzer, debugLog);
+    debugLog('✅ Smart playlist system initialized', 'success');
+
 
     // NOW initialize parsers (after they're declared)
     metadataParser = new MetadataParser(debugLog);
@@ -226,6 +236,42 @@ function extractDominantColor(imageUrl) {
         img.src = imageUrl;
     });
 }
+
+// Initialize Lyrics Manager
+lyricsManager = new LyricsManager(debugLog);
+lyricsManager.init({
+    lyricsDisplay: document.getElementById('lyrics-display'),
+    exportButton: document.getElementById('export-lyrics-button'),
+    fullscreenToggle: document.getElementById('fullscreen-lyrics-toggle'),
+    fullscreenContainer: document.getElementById('fullscreen-lyrics'),
+    fullscreenCanvas: document.getElementById('fullscreen-lyrics-viz-canvas'),
+    fullscreenContent: document.getElementById('fullscreen-lyrics-content'),
+    fullscreenCloseBtn: document.getElementById('lyrics-close-btn'),
+    fullscreenPrevBtn: document.getElementById('lyrics-prev-btn'),
+    fullscreenNextBtn: document.getElementById('lyrics-next-btn')
+}, player);
+
+// Set up callbacks
+lyricsManager.onGetTrackInfo = () => {
+    if (currentTrackIndex === -1 || playlist.length === 0) {
+        return { title: 'Unknown Track', artist: 'Unknown Artist' };
+    }
+    const track = playlist[currentTrackIndex];
+    return {
+        title: track.metadata?.title || track.fileName,
+        artist: track.metadata?.artist || 'Unknown Artist'
+    };
+};
+
+lyricsManager.onNavigationRequest = (direction) => {
+    if (direction === 'previous' && !prevButton.disabled) {
+        playPrevious();
+    } else if (direction === 'next' && !nextButton.disabled) {
+        playNext();
+    }
+};
+
+debugLog('✅ Enhanced Lyrics Manager initialized', 'success');
         
         function applyDynamicBackground(color) {
             if (!color) {
@@ -307,6 +353,10 @@ function extractDominantColor(imageUrl) {
         analyser.fftSize = APP_CONFIG.FFT_SIZE;
         bufferLength = analyser.frequencyBinCount;
         dataArray = new Uint8Array(bufferLength);
+        // Pass audio context to lyrics manager
+        if (lyricsManager) {
+            lyricsManager.setAudioContext(analyser, dataArray, bufferLength);
+        }
         
         // Create equalizer filters
         bassFilter = audioContext.createBiquadFilter();
@@ -342,6 +392,10 @@ function extractDominantColor(imageUrl) {
         } else {
             debugLog('Visualizer initialization skipped: analyser or canvas not ready', 'warning');
         }
+        // ✅ ADD: Initialize volume control's audio nodes
+    if (volumeControl && audioContext && audioSource) {
+        volumeControl.initAudioNodes(audioContext, audioSource, audioContext.destination);
+    }
         
         setupEqualizerControls();
 
@@ -601,7 +655,6 @@ player.addEventListener('timeupdate', broadcastStateToWidget);
             };
         }
         
-        // --- Metadata Functions (User's Code) ---
 
 // What This Does
 
@@ -633,10 +686,10 @@ player.addEventListener('timeupdate', broadcastStateToWidget);
     trackAlbum.textContent = '--';
     applyDynamicBackground(null);
     lyricsDisplay.innerHTML = '<div class="lyric-line">Lyrics will appear here when a track is loaded.</div>';
+    lyricsManager.clearLyrics();
     currentTimeDisplay.textContent = '0:00';
     durationDisplay.textContent = '0:00';
     progressBar.style.width = '0%';
-    exportLyricsButton.disabled = true;
 }
 
 async function displayMetadata(metadata) {
@@ -654,6 +707,7 @@ async function displayMetadata(metadata) {
                 const color = await extractDominantColor(metadata.image);
                 applyDynamicBackground(color);
                 currentDominantColor = color;
+                lyricsManager.setDominantColor(color);
             } else {
                 coverArt.classList.remove('loaded');
                 coverArt.src = '';
@@ -662,180 +716,6 @@ async function displayMetadata(metadata) {
                 debugLog('No album art found', 'warning');
             }
         }
-        
-
-
-// --- Lyric Display Functions ---
-// --- Lyric Display Functions ---
-function renderLyrics(cues) {
-    lyricsDisplay.innerHTML = '<button id="export-lyrics-button" disabled>📥 Export</button>';
-    
-    if (cues.length === 0) {
-        lyricsDisplay.innerHTML += '<div class="lyric-line">No lyrics available or VTT file malformed.</div>';
-        return;
-    }
-    
-    cues.forEach((cue, index) => {
-        const line = document.createElement('div');
-        line.className = 'lyric-line';
-        line.textContent = cue.text.replace(/\r?\n|\r/g, ' ');
-        line.dataset.index = index;
-        line.dataset.startTime = cue.startTime;
-        
-        line.onclick = () => {
-            player.currentTime = cue.startTime;
-            debugLog(`Jumping to lyric time: ${formatTime(cue.startTime)}`, 'info');
-        };
-        
-        lyricsDisplay.appendChild(line);
-    });
-    
-    // Re-get the button reference and enable if lyrics are loaded
-    const newExportButton = document.getElementById('export-lyrics-button');
-    newExportButton.disabled = cues.length === 0;
-    
-    // Re-attach event handlers to the new button
-    newExportButton.onclick = (e) => {
-        if (e.ctrlKey) {
-            e.preventDefault();
-            copyLyricsToClipboard();
-        } else {
-            exportLyricsToText();
-        }
-    };
-    
-    newExportButton.oncontextmenu = (e) => {
-        e.preventDefault();
-        copyLyricsToClipboard();
-    };
-
-    // Cache the lyric line elements for performance
-    cachedLyricLines = Array.from(lyricsDisplay.querySelectorAll('.lyric-line'));
-}
-
-function updateLyricHighlight() {
-    // OPTIMIZATION: Skip if lyrics aren't visible
-    if (compactMode === 'mini' || compactMode === 'compact') {
-        return;
-    }
-    
-    const currentTime = player.currentTime;
-    
-    if (cues.length === 0 || cachedLyricLines.length === 0) return;
-
-    let activeLine = null;
-
-    // Find the currently active cue/line using cached references
-    for (let i = 0; i < cues.length; i++) {
-        const cue = cues[i];
-        if (currentTime >= cue.startTime && currentTime < cue.endTime) {
-            activeLine = cachedLyricLines[i];
-            break;
-        }
-    }
-
-    // Update highlighting using cached references
-    cachedLyricLines.forEach(line => line.classList.remove('active'));
-
-    if (activeLine) {
-        activeLine.classList.add('active');
-        
-        // Only scroll if the line is outside the visible area
-        const lineRect = activeLine.getBoundingClientRect();
-        const containerRect = lyricsDisplay.getBoundingClientRect();
-        
-        if (lineRect.top < containerRect.top || lineRect.bottom > containerRect.bottom) {
-            const lineTop = activeLine.offsetTop;
-            const lineHeight = activeLine.offsetHeight;
-            const containerHeight = lyricsDisplay.clientHeight;
-            const targetScroll = lineTop - (containerHeight / 2) + (lineHeight / 2);
-            
-            lyricsDisplay.scrollTo({ 
-                top: targetScroll,
-                behavior: 'smooth'
-            });
-        }
-    }
-}
-
-// --- Lyrics Export Functions ---
-function exportLyricsToText() {
-    if (cues.length === 0 || currentTrackIndex === -1) {
-        debugLog('No lyrics to export', 'warning');
-        return;
-    }
-    
-    const track = playlist[currentTrackIndex];
-    const trackName = track.metadata?.title || track.file.name.split('.').slice(0, -1).join('.');
-    const artist = track.metadata?.artist || 'Unknown Artist';
-    
-    // Build the lyrics text
-    let lyricsText = `${trackName}\n`;
-    lyricsText += `Artist: ${artist}\n`;
-    lyricsText += `${'='.repeat(50)}\n\n`;
-    
-    cues.forEach((cue) => {
-        const timestamp = formatTime(cue.startTime);
-        lyricsText += `[${timestamp}] ${cue.text}\n`;
-    });
-    
-    lyricsText += `\n${'='.repeat(50)}\n`;
-    lyricsText += `Exported from Ultimate Local Music Player\n`;
-    lyricsText += `${new Date().toLocaleString()}\n`;
-    
-    // Create and download file
-    const blob = new Blob([lyricsText], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${trackName} - Lyrics.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    
-    debugLog(`Lyrics exported: ${trackName}`, 'success');
-}
-
-function copyLyricsToClipboard() {
-    if (cues.length === 0 || currentTrackIndex === -1) {
-        debugLog('No lyrics to copy', 'warning');
-        return;
-    }
-    
-    // Build plain lyrics text (without timestamps)
-    const lyricsText = cues.map(cue => cue.text).join('\n');
-    
-    // Copy to clipboard
-    navigator.clipboard.writeText(lyricsText).then(() => {
-        debugLog('Lyrics copied to clipboard', 'success');
-        // Visual feedback
-        exportLyricsButton.textContent = '✓ Copied!';
-        setTimeout(() => {
-            exportLyricsButton.textContent = '📥 Export';
-        }, 2000);
-    }).catch(err => {
-        debugLog(`Failed to copy lyrics: ${err.message}`, 'error');
-    });
-}
-
-// Export button event handlers
-exportLyricsButton.onclick = (e) => {
-    // Right-click or Ctrl+Click = Copy to clipboard
-    if (e.ctrlKey) {
-        e.preventDefault();
-        copyLyricsToClipboard();
-    } else {
-        // Left-click = Download as file
-        exportLyricsToText();
-    }
-};
-
-// Prevent context menu on right-click
-exportLyricsButton.oncontextmenu = (e) => {
-    e.preventDefault();
-    copyLyricsToClipboard();
-};
         
         // --- Playlist Display Functions (User's Code) ---
  function renderPlaylist() {
@@ -1048,6 +928,12 @@ function updateJumpButton() {
     if (!audioContext) {
         setupAudioContext();
     }
+
+           // ✅ ADD: Apply saved volume for this track (if exists)
+    const trackId = `${track.metadata?.artist || 'Unknown'}_${track.metadata?.title || track.fileName}`;
+    if (volumeControl) {
+        volumeControl.applyTrackVolume(trackId);
+    }
     
     // Apply Auto-EQ if enabled
     if (autoEQManager && autoEQManager.enabled) {
@@ -1067,29 +953,21 @@ function updateJumpButton() {
     player.src = track.audioURL;
     debugLog('Audio source set');
 
-            // Load VTT with MANUAL parsing (fixes the cue loading issue)
-if (track.vtt) {
-    debugLog(`Loading VTT: ${track.vtt.name}`);
-    
-   
-    
- // Read and parse the VTT file using VTTParser
-    try {
-        cues = await vttParser.loadVTTFile(track.vtt);
-        if (cues.length > 0) {
-            renderLyrics(cues);
-        } else {
-            lyricsDisplay.innerHTML = '<div class="lyric-line">No lyrics cues found in VTT file.</div>';
+    // Load VTT with MANUAL parsing
+    if (track.vtt) {
+        debugLog(`Loading VTT: ${track.vtt.name}`);
+        
+        try {
+            const parsedCues = await vttParser.loadVTTFile(track.vtt);
+            lyricsManager.loadLyrics(parsedCues);
+        } catch (err) {
+            debugLog(`Failed to load VTT: ${err.message}`, 'error');
+            lyricsManager.clearLyrics();
         }
-    } catch (err) {
-        debugLog(`Failed to load VTT: ${err.message}`, 'error');
-        lyricsDisplay.innerHTML = '<div class="lyric-line">Error loading lyrics file.</div>';
+    } else {
+        lyricsManager.clearLyrics();
+        debugLog(`VTT file NOT found for ${track.fileName}.`, 'warning');
     }
-    
-} else {
-     lyricsDisplay.innerHTML = '<div class="lyric-line">No lyrics file found for this track.</div>';
-     debugLog(`VTT file NOT found for ${track.fileName}.`, 'warning');
-}
 
 updatePlaylistHighlight();
 prevButton.disabled = false;
@@ -1194,6 +1072,12 @@ if (crossfadeManager && crossfadeManager.enabled && currentTrackIndex + 1 < play
         }
 
 async function playNext() {
+    // ✅ ADD: Remember volume for current track before switching
+    if (currentTrackIndex !== -1 && volumeControl) {
+        const track = playlist[currentTrackIndex];
+        const trackId = `${track.metadata?.artist || 'Unknown'}_${track.metadata?.title || track.fileName}`;
+        volumeControl.rememberTrackVolume(trackId, volumeControl.getVolume());
+    }
     if (currentTrackIndex === -1 || playlist.length === 0) return;
 
     let nextIndex;
@@ -1232,7 +1116,12 @@ if (crossfadeManager && crossfadeManager.enabled) {
 }
 
         function playPrevious() {
-            // ... (Your existing playPrevious logic here) ...
+            // ✅ ADD: Remember volume for current track before switching
+    if (currentTrackIndex !== -1 && volumeControl) {
+        const track = playlist[currentTrackIndex];
+        const trackId = `${track.metadata?.artist || 'Unknown'}_${track.metadata?.title || track.fileName}`;
+        volumeControl.rememberTrackVolume(trackId, volumeControl.getVolume());
+    }
             if (currentTrackIndex === -1 || playlist.length === 0) return;
             if (currentTrackIndex > 0) {
                 loadTrack(currentTrackIndex - 1);
@@ -1740,8 +1629,9 @@ player.addEventListener('timeupdate', () => {
         currentTimeDisplay.textContent = formatTime(player.currentTime);
     }
     
-    if (perfManager.shouldUpdate('lyrics')) {
-        updateLyricHighlight();
+    // ✅ REPLACE WITH THIS:
+    if (perfManager.shouldUpdate('lyrics') && lyricsManager) {
+        lyricsManager.update(player.currentTime, compactMode);
     }
 });
 
@@ -1852,6 +1742,28 @@ if (autoEQButton) {
     };
 }
 
+    // Volume Boost Button
+const volumeBoostButton = document.getElementById('volume-boost-button');
+if (volumeBoostButton && volumeControl) {
+    volumeBoostButton.onclick = () => {
+        const currentState = volumeControl.isBoostEnabled();
+        volumeControl.setBoost(!currentState, 1.5);
+        
+        volumeBoostButton.classList.toggle('active', !currentState);
+        const label = volumeBoostButton.querySelector('.sidebar-label');
+        if (label) {
+            label.textContent = !currentState ? 'Boost On' : 'Boost Off';
+        }
+    };
+    
+    // Restore state on load
+    if (volumeControl.isBoostEnabled()) {
+        volumeBoostButton.classList.add('active');
+        const label = volumeBoostButton.querySelector('.sidebar-label');
+        if (label) label.textContent = 'Boost On';
+    }
+}
+
 // ✅ DJ MODE BUTTON
 const djModeButton = document.getElementById('dj-mode-button');
 if (djModeButton) {
@@ -1928,6 +1840,21 @@ case 'm':
 case 'M':
     volumeControl.toggleMute();
     break;
+                    case 'ArrowUp':
+    e.preventDefault();
+    volumeControl.increaseVolume(0.05);
+    break;
+case 'ArrowDown':
+    e.preventDefault();
+    volumeControl.decreaseVolume(0.05);
+    break;
+case 'b':
+case 'B':
+    e.preventDefault();
+    const currentBoost = volumeControl.isBoostEnabled();
+    volumeControl.setBoost(!currentBoost, 1.5);
+    break;
+                    
                 case 'c':
                 case 'C':
                     e.preventDefault();
@@ -1965,35 +1892,18 @@ folderButton.onclick = async () => {
     }
     
     try {
-        // If we already have a folder, reload it
-        if (folderHandle) {
-            debugLog('Reloading from existing folder...', 'info');
-            await loadFromFolder();
+        // Check if we have folder history
+        const history = await folderPersistence.getHistory();
+        const currentMetadata = await folderPersistence.getFolderMetadata();
+        
+        // If we have history or a current folder, show the modal
+        if (history.length > 0 || currentMetadata) {
+            showFolderHistoryModal();
             return;
         }
         
-        debugLog('Requesting folder access...', 'info');
-        
-        // Ask user to select a folder
-        folderHandle = await window.showDirectoryPicker({
-            mode: 'read',
-            startIn: 'music'
-        });
-        
-        debugLog(`Folder selected: ${folderHandle.name}`, 'success');
-        
-        // Save the folder handle for next time
-        await folderPersistence.saveFolderHandle(folderHandle);
-        
-        // Update button to show folder is selected
-        folderButton.textContent = `📁 ${folderHandle.name} (Click to reload)`;
-        folderButton.classList.add('active');
-                
-        // Update button visibility
-        updateFolderButtons();
-        
-        // Immediately load files from the folder
-        await loadFromFolder();
+        // No history - go straight to folder picker
+        await selectNewFolder();
         
     } catch (err) {
         if (err.name === 'AbortError') {
@@ -2033,6 +1943,197 @@ function updateFolderButtons() {
         clearFolderButton.style.display = 'none';
     }
 }
+
+    // Folder History Modal Handlers
+const folderHistoryModal = document.getElementById('folder-history-modal');
+const folderHistoryClose = document.querySelector('.folder-history-close');
+const folderHistoryOverlay = document.querySelector('.folder-history-overlay');
+const folderHistoryNew = document.getElementById('folder-history-new');
+const folderHistoryClear = document.getElementById('folder-history-clear');
+
+if (folderHistoryClose) {
+    folderHistoryClose.onclick = closeFolderHistoryModal;
+}
+
+if (folderHistoryOverlay) {
+    folderHistoryOverlay.onclick = closeFolderHistoryModal;
+}
+
+if (folderHistoryNew) {
+    folderHistoryNew.onclick = async () => {
+        closeFolderHistoryModal();
+        await selectNewFolder();
+    };
+}
+
+if (folderHistoryClear) {
+    folderHistoryClear.onclick = async () => {
+        if (confirm('Clear all folder history?\n\nThis will not delete your music files, only the history of folders you\'ve accessed.')) {
+            await folderPersistence.clearHistory();
+            debugLog('Folder history cleared', 'success');
+            closeFolderHistoryModal();
+        }
+    };
+}
+
+    // ========== FOLDER HISTORY MODAL FUNCTIONS ==========
+
+async function showFolderHistoryModal() {
+    const modal = document.getElementById('folder-history-modal');
+    const currentSection = document.getElementById('folder-history-current');
+    const historyList = document.getElementById('folder-history-list');
+    
+    if (!modal) return;
+    
+    // Get data
+    const history = await folderPersistence.getHistory();
+    const currentMetadata = await folderPersistence.getFolderMetadata();
+    
+    // Render current folder section
+    if (currentMetadata) {
+        const lastAccessed = new Date(currentMetadata.lastAccessed);
+        const timeAgo = getTimeAgo(currentMetadata.lastAccessed);
+        
+        currentSection.className = 'folder-history-current';
+        currentSection.innerHTML = `
+            <h3>✅ Current Folder</h3>
+            <div class="folder-item-info">
+                <div class="folder-item-name">${currentMetadata.folderName}</div>
+                <div class="folder-item-details">
+                    <span class="folder-item-stat">🎵 ${currentMetadata.trackCount} tracks</span>
+                    ${currentMetadata.hasLyrics ? '<span class="folder-item-stat">🎤 Has lyrics</span>' : ''}
+                    ${currentMetadata.hasAnalysis ? '<span class="folder-item-stat">📊 Has analysis</span>' : ''}
+                </div>
+                <div class="folder-item-date">Last accessed: ${lastAccessed.toLocaleString()} (${timeAgo})</div>
+            </div>
+        `;
+    } else {
+        currentSection.className = 'folder-history-current empty';
+        currentSection.innerHTML = `
+            <h3>No Folder Currently Loaded</h3>
+            <p style="color: #888; margin: 10px 0 0 0;">Select a recent folder below or browse for a new one</p>
+        `;
+    }
+    
+    // Render history list
+    if (history.length > 0) {
+        historyList.innerHTML = '';
+        
+        history.forEach((entry) => {
+            const date = new Date(entry.timestamp);
+            const timeAgo = getTimeAgo(entry.timestamp);
+            const isCurrent = currentMetadata && entry.folderName === currentMetadata.folderName;
+            
+            const item = document.createElement('div');
+            item.className = `folder-history-item ${isCurrent ? 'current' : ''}`;
+            
+            item.innerHTML = `
+                <div class="folder-item-info">
+                    <div class="folder-item-name">
+                        ${entry.folderName}
+                        ${isCurrent ? '<span class="folder-item-current-badge">CURRENT</span>' : ''}
+                    </div>
+                    <div class="folder-item-details">
+                        <span class="folder-item-stat">🎵 ${entry.trackCount} tracks</span>
+                        ${entry.hasLyrics ? '<span class="folder-item-stat">🎤 Lyrics</span>' : ''}
+                        ${entry.hasAnalysis ? '<span class="folder-item-stat">📊 Analysis</span>' : ''}
+                    </div>
+                </div>
+                <div class="folder-item-date">${date.toLocaleDateString()}<br>${timeAgo}</div>
+            `;
+            
+            // Only clickable if not current
+            if (!isCurrent) {
+                item.style.cursor = 'pointer';
+                item.onclick = async () => {
+                    // Try to reload this folder by name
+                    // Since we don't store handles for old folders, we need to prompt user
+                    if (confirm(`Load "${entry.folderName}"?\n\nYou'll need to select this folder again to grant permission.`)) {
+                        modal.style.display = 'none';
+                        await selectNewFolder(entry.folderName);
+                    }
+                };
+            }
+            
+            historyList.appendChild(item);
+        });
+    } else {
+        historyList.innerHTML = `
+            <div class="folder-history-empty">
+                <div class="folder-history-empty-icon">📁</div>
+                <p>No recent folders</p>
+            </div>
+        `;
+    }
+    
+    // Show modal
+    modal.style.display = 'flex';
+}
+
+function closeFolderHistoryModal() {
+    const modal = document.getElementById('folder-history-modal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
+async function selectNewFolder(expectedName = null) {
+    try {
+        debugLog('Requesting folder access...', 'info');
+        
+        // Ask user to select a folder
+        const handle = await window.showDirectoryPicker({
+            mode: 'read',
+            startIn: 'music'
+        });
+        
+        // If we expected a specific folder, verify it matches
+        if (expectedName && handle.name !== expectedName) {
+            if (!confirm(`You selected "${handle.name}" but expected "${expectedName}".\n\nContinue with "${handle.name}"?`)) {
+                return;
+            }
+        }
+        
+        debugLog(`Folder selected: ${handle.name}`, 'success');
+        
+        // Save the folder handle
+        await folderPersistence.saveFolderHandle(handle);
+        
+        // Update global folderHandle
+        folderHandle = handle;
+        
+        // Update button to show folder is selected
+        folderButton.textContent = `📁 ${handle.name} (Click to reload)`;
+        folderButton.classList.add('active');
+        
+        // Update button visibility
+        updateFolderButtons();
+        
+        // Immediately load files from the folder
+        await loadFromFolder();
+        
+    } catch (err) {
+        if (err.name === 'AbortError') {
+            debugLog('Folder selection cancelled', 'info');
+        } else {
+            debugLog(`Folder selection failed: ${err.message}`, 'error');
+            alert(`Failed to access folder: ${err.message}`);
+        }
+    }
+}
+
+function getTimeAgo(timestamp) {
+    const seconds = Math.floor((Date.now() - timestamp) / 1000);
+    
+    if (seconds < 60) return 'just now';
+    if (seconds < 3600) return `${Math.floor(seconds / 60)} minutes ago`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)} hours ago`;
+    if (seconds < 604800) return `${Math.floor(seconds / 86400)} days ago`;
+    if (seconds < 2592000) return `${Math.floor(seconds / 604800)} weeks ago`;
+    return `${Math.floor(seconds / 2592000)} months ago`;
+}
+
+// ========== END FOLDER HISTORY MODAL FUNCTIONS ==========
 
 // Call this whenever folder state changes
 
@@ -2135,42 +2236,44 @@ if (autoReload && folderPersistence.hasSavedFolder()) {
     debugLog('Checking for saved folder...', 'info');
     
     try {
-        const savedHandle = await folderPersistence.loadFolderHandle();
+    const loadResult = await folderPersistence.loadFolderHandle();
+    
+    if (loadResult && loadResult.handle) {
+        const { handle, metadata } = loadResult;
         
-        if (savedHandle) {
-            debugLog(`Found saved folder: ${savedHandle.name}`, 'info');
+        debugLog(`Found saved folder: ${handle.name}`, 'info');
+        
+        // Verify we still have permission
+        const hasPermission = await folderPersistence.verifyFolderPermission(handle);
+        
+        if (hasPermission.granted) {
+            folderHandle = handle;
+            folderButton.textContent = `📁 ${folderHandle.name} (Click to reload)`;
+            folderButton.classList.add('active');
             
-            // Verify we still have permission
-            const hasPermission = await folderPersistence.verifyFolderPermission(savedHandle);
+            // Update button visibility
+            updateFolderButtons();
             
-            if (hasPermission) {
-                folderHandle = savedHandle;
-                folderButton.textContent = `📁 ${folderHandle.name} (Click to reload)`;
-                folderButton.classList.add('active');
-                
-                // Update button visibility
-                updateFolderButtons();
-                
-                // Auto-load the files with delay
-                debugLog('Auto-loading music from saved folder...', 'success');
-                
-                // CRITICAL: Add delay to prevent race conditions
-                setTimeout(async () => {
-                    await loadFromFolder();
-                }, 500);
-                
-            } else {
-                debugLog('Permission denied for saved folder', 'warning');
-                folderPersistence.deleteFolderHandle();
-                
-                // Show a notification
-                playlistStatus.textContent = `Previous folder "${savedHandle.name}" needs permission - click "📁 Select Music Folder" to reload`;
-            }
+            // Auto-load the files with delay
+            debugLog('Auto-loading music from saved folder...', 'success');
+            
+            // CRITICAL: Add delay to prevent race conditions
+            setTimeout(async () => {
+                await loadFromFolder();
+            }, 500);
+            
+        } else {
+            debugLog('Permission denied for saved folder', 'warning');
+            folderPersistence.deleteFolderHandle();
+            
+            // Show a notification
+            playlistStatus.textContent = `Previous folder "${handle.name}" needs permission - click "📁 Select Music Folder" to reload`;
         }
-    } catch (err) {
-        debugLog(`Error loading saved folder: ${err.message}`, 'error');
-        folderPersistence.deleteFolderHandle();
     }
+} catch (err) {
+    debugLog(`Error loading saved folder: ${err.message}`, 'error');
+    folderPersistence.deleteFolderHandle();
+}
     analyzer.loadAnalysesFromStorage();
 debugLog('Loaded cached music analysis', 'info');
 }
@@ -3074,6 +3177,12 @@ window.addEventListener('resize', () => {
     }
 });
 
+window.addEventListener('resize', () => {
+    if (lyricsManager) {
+        lyricsManager.onWindowResize();
+    }
+});
+
 debugLog('Fullscreen visualizer system initialized', 'success');
 // ========== END FULLSCREEN VISUALIZER SYSTEM ==========
 
@@ -3181,258 +3290,6 @@ if (deepAnalysisBtn) {
         window.open('deep-music-analysis.html', '_blank');
     };
 }
-
-// ========== FULLSCREEN LYRICS WITH EDGE VISUALIZER ==========
-try {
-    const fullscreenLyricsToggle = document.getElementById('fullscreen-lyrics-toggle');
-    const fullscreenLyrics = document.getElementById('fullscreen-lyrics');
-    const fullscreenLyricsVizCanvas = document.getElementById('fullscreen-lyrics-viz-canvas');
-    const fullscreenLyricsContent = document.getElementById('fullscreen-lyrics-content');
-    const lyricsCloseBtn = document.getElementById('lyrics-close-btn');
-    const lyricsPrevBtn = document.getElementById('lyrics-prev-btn');
-    const lyricsNextBtn = document.getElementById('lyrics-next-btn');
-
-    if (!fullscreenLyricsToggle) {
-        console.error('❌ Fullscreen lyrics button not found!');
-        throw new Error('Button element missing');
-    }
-
-    console.log('✅ Fullscreen lyrics elements found, attaching handlers...');
-
-    let fullscreenLyricsActive = false;
-    let lyricsVizAnimationId = null;
-
-    function toggleFullscreenLyrics(show) {
-        console.log('🎤 toggleFullscreenLyrics called with:', show);
-        fullscreenLyricsActive = show;
-        
-        if (show) {
-            // Check if we have lyrics
-            if (cues.length === 0) {
-                alert('No lyrics available for this track!');
-                return;
-            }
-            
-            fullscreenLyrics.classList.remove('fullscreen-lyrics-hidden');
-            fullscreenLyrics.classList.add('show');
-            
-            // Resize canvas
-            fullscreenLyricsVizCanvas.width = window.innerWidth;
-            fullscreenLyricsVizCanvas.height = window.innerHeight;
-            
-            // Render lyrics
-            renderFullscreenLyrics();
-            
-            // Start edge visualizer
-            startLyricsEdgeVisualizer();
-            
-            fullscreenLyricsToggle.classList.add('active');
-            fullscreenLyricsToggle.textContent = '🎤 Exit Lyrics';
-            
-            debugLog('Fullscreen lyrics activated', 'success');
-        } else {
-            fullscreenLyrics.classList.add('fullscreen-lyrics-hidden');
-            fullscreenLyrics.classList.remove('show');
-            
-            // Stop visualizer
-            stopLyricsEdgeVisualizer();
-            
-            fullscreenLyricsToggle.classList.remove('active');
-            fullscreenLyricsToggle.textContent = '🎤 Fullscreen Lyrics';
-            
-            debugLog('Fullscreen lyrics deactivated', 'info');
-        }
-    }
-
-    function renderFullscreenLyrics() {
-        fullscreenLyricsContent.innerHTML = '';
-        
-        if (cues.length === 0) {
-            fullscreenLyricsContent.innerHTML = '<div class="fullscreen-lyrics-empty">No lyrics available</div>';
-            return;
-        }
-        
-        cues.forEach((cue, index) => {
-            const line = document.createElement('div');
-            line.className = 'fullscreen-lyric-line';
-            line.textContent = cue.text.replace(/\r?\n|\r/g, ' ');
-            line.dataset.index = index;
-            line.dataset.startTime = cue.startTime;
-            
-            line.onclick = () => {
-                player.currentTime = cue.startTime;
-                debugLog(`Jumped to: ${formatTime(cue.startTime)}`, 'info');
-            };
-            
-            fullscreenLyricsContent.appendChild(line);
-        });
-    }
-
-    function updateFullscreenLyricsHighlight() {
-        if (!fullscreenLyricsActive) return;
-        
-        const currentTime = player.currentTime;
-        const lines = fullscreenLyricsContent.querySelectorAll('.fullscreen-lyric-line');
-        
-        let activeLine = null;
-        
-        for (let i = 0; i < cues.length; i++) {
-            const cue = cues[i];
-            if (currentTime >= cue.startTime && currentTime < cue.endTime) {
-                activeLine = lines[i];
-                break;
-            }
-        }
-        
-        lines.forEach(line => line.classList.remove('active'));
-        
-        if (activeLine) {
-            activeLine.classList.add('active');
-            
-            const lineRect = activeLine.getBoundingClientRect();
-            const containerRect = fullscreenLyricsContent.getBoundingClientRect();
-            
-            if (lineRect.top < containerRect.top || lineRect.bottom > containerRect.bottom) {
-                const lineTop = activeLine.offsetTop;
-                const lineHeight = activeLine.offsetHeight;
-                const containerHeight = fullscreenLyricsContent.clientHeight;
-                const targetScroll = lineTop - (containerHeight / 2) + (lineHeight / 2);
-                
-                fullscreenLyricsContent.scrollTo({ 
-                    top: targetScroll,
-                    behavior: 'smooth'
-                });
-            }
-        }
-    }
-
-    function startLyricsEdgeVisualizer() {
-        if (!analyser || !dataArray) return;
-        
-        const ctx = fullscreenLyricsVizCanvas.getContext('2d');
-        
-        function drawEdgeVisualizer() {
-            if (!fullscreenLyricsActive) {
-                lyricsVizAnimationId = null;
-                return;
-            }
-            
-            lyricsVizAnimationId = requestAnimationFrame(drawEdgeVisualizer);
-            
-            analyser.getByteFrequencyData(dataArray);
-            
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
-            ctx.fillRect(0, 0, fullscreenLyricsVizCanvas.width, fullscreenLyricsVizCanvas.height);
-            
-            const width = fullscreenLyricsVizCanvas.width;
-            const height = fullscreenLyricsVizCanvas.height;
-            const barCount = 240;
-            const barThickness = 6;
-            const maxBarLength = 100;
-            
-            for (let i = 0; i < barCount; i++) {
-                const dataIndex = Math.floor((i / barCount) * bufferLength);
-                const value = dataArray[dataIndex] / 255;
-                const barLength = value * maxBarLength;
-                
-                let hue;
-                if (currentDominantColor) {
-                    const { r, g, b } = currentDominantColor;
-                    const baseHue = Math.atan2(Math.sqrt(3) * (g - b), 2 * r - g - b) * (180 / Math.PI);
-                    const normalizedHue = baseHue < 0 ? baseHue + 360 : baseHue;
-                    hue = normalizedHue + (i / barCount) * 40;
-                } else {
-                    hue = (i / barCount) * 360;
-                }
-                const color = `hsl(${hue}, 100%, 60%)`;
-                
-                ctx.fillStyle = color;
-                ctx.shadowBlur = 15;
-                ctx.shadowColor = color;
-                
-                const perimeter = 2 * (width + height);
-                const position = (i / barCount) * perimeter;
-                
-                if (position < width) {
-                    const x = position;
-                    ctx.fillRect(x, 0, barThickness, barLength);
-                } else if (position < width + height) {
-                    const y = position - width;
-                    ctx.fillRect(width - barLength, y, barLength, barThickness);
-                } else if (position < 2 * width + height) {
-                    const x = width - (position - width - height);
-                    ctx.fillRect(x, height - barLength, barThickness, barLength);
-                } else {
-                    const y = height - (position - 2 * width - height);
-                    ctx.fillRect(0, y, barLength, barThickness);
-                }
-            }
-            
-            ctx.shadowBlur = 0;
-        }
-        
-        drawEdgeVisualizer();
-    }
-
-    function stopLyricsEdgeVisualizer() {
-        if (lyricsVizAnimationId) {
-            cancelAnimationFrame(lyricsVizAnimationId);
-            lyricsVizAnimationId = null;
-        }
-    }
-
-    // Event handlers
-    fullscreenLyricsToggle.onclick = () => {
-        console.log('🎤 Button clicked! Current state:', fullscreenLyricsActive);
-        toggleFullscreenLyrics(!fullscreenLyricsActive);
-    };
-
-    lyricsCloseBtn.onclick = () => {
-        toggleFullscreenLyrics(false);
-    };
-
-    lyricsPrevBtn.onclick = () => {
-        if (!prevButton.disabled) {
-            playPrevious();
-        }
-    };
-
-    lyricsNextBtn.onclick = () => {
-        if (!nextButton.disabled) {
-            playNext();
-        }
-    };
-
-    // ESC key to close
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && fullscreenLyricsActive) {
-            e.preventDefault();
-            toggleFullscreenLyrics(false);
-        }
-    });
-
-    // Update lyrics highlight during playback
-    player.addEventListener('timeupdate', () => {
-        if (fullscreenLyricsActive) {
-            updateFullscreenLyricsHighlight();
-        }
-    });
-
-    // Handle window resize
-    window.addEventListener('resize', () => {
-        if (fullscreenLyricsActive) {
-            fullscreenLyricsVizCanvas.width = window.innerWidth;
-            fullscreenLyricsVizCanvas.height = window.innerHeight;
-        }
-    });
-
-    console.log('✅ Fullscreen lyrics system initialized successfully');
-
-} catch (error) {
-    console.error('❌ Fullscreen lyrics initialization failed:', error);
-    console.error('Stack:', error.stack);
-}
-// ========== END FULLSCREEN LYRICS ==========
     
     // ========== SMART PLAYLIST INTEGRATION ==========
 
@@ -3773,9 +3630,45 @@ async function startBackgroundAnalysis() {
 }
 // ========== END BACKGROUND ANALYSIS ==========
 
+    // Storage stats button
+const storageStatsBtn = document.getElementById('storage-stats-btn');
+if (storageStatsBtn) {
+    storageStatsBtn.onclick = async () => {
+        const stats = await folderPersistence.getStats();
+        
+        if (stats) {
+            const history = await folderPersistence.getHistory();
+            
+            let message = `💾 STORAGE INFORMATION\n\n`;
+            message += `Used: ${folderPersistence.formatBytes(stats.storageUsed)}\n`;
+            message += `Available: ${folderPersistence.formatBytes(stats.storageQuota)}\n`;
+            message += `Usage: ${stats.percentUsed}%\n\n`;
+            
+            if (stats.hasSavedFolder) {
+                message += `📁 CURRENT FOLDER\n`;
+                message += `Name: ${stats.folderName}\n`;
+                message += `Tracks: ${stats.trackCount}\n`;
+                message += `Last accessed: ${new Date(stats.lastAccessed).toLocaleString()}\n\n`;
+            }
+            
+            if (history.length > 0) {
+                message += `📚 RECENT FOLDERS (${history.length})\n`;
+                history.slice(0, 5).forEach((entry, i) => {
+                    const date = new Date(entry.timestamp).toLocaleDateString();
+                    message += `${i + 1}. ${entry.folderName} (${entry.trackCount} tracks) - ${date}\n`;
+                });
+            }
+            
+            alert(message);
+        } else {
+            alert('Unable to retrieve storage information.');
+        }
+    };
+}
+
     
 debugLog('Music player initialized');
 
-    
+window.lyricsManager = lyricsManager;
 
 }); // ← Only ONE closing for DOMContentLoaded

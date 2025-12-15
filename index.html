@@ -49,6 +49,13 @@
                     <span class="sidebar-label">Auto-EQ Off</span>
                 </button>
             </div>
+
+            <div class="sidebar-item">
+    <button id="volume-boost-button" class="sidebar-btn" data-icon="⚡" data-label="Volume Boost">
+        <span class="sidebar-icon">⚡</span>
+        <span class="sidebar-label">Boost Off</span>
+    </button>
+</div>
             
             <div class="sidebar-item">
                 <button id="dj-mode-button" class="sidebar-btn" data-icon="🎧" data-label="DJ Mode" disabled>
@@ -98,6 +105,13 @@
                     <span class="sidebar-label">Fullscreen Visualizer</span>
                 </button>
             </div>
+
+            <div class="sidebar-item">
+    <button id="storage-stats-btn" class="sidebar-btn" data-icon="💾" data-label="Storage">
+        <span class="sidebar-icon">💾</span>
+        <span class="sidebar-label">Storage Info</span>
+    </button>
+</div>
             
             <div class="sidebar-item">
                 <button id="custom-bg-button" class="sidebar-btn" data-icon="🎨" data-label="Background">
@@ -410,6 +424,35 @@
         </div>
     </div>
 </div>
+    <!-- Folder History Modal -->
+<div id="folder-history-modal" style="display: none;">
+    <div class="folder-history-overlay"></div>
+    <div class="folder-history-content">
+        <div class="folder-history-header">
+            <h2>📁 Select a Folder</h2>
+            <button class="folder-history-close">✕</button>
+        </div>
+        <div class="folder-history-body">
+            <div class="folder-history-current" id="folder-history-current">
+                <!-- Current folder will be inserted here -->
+            </div>
+            <div class="folder-history-section">
+                <h3>Recent Folders</h3>
+                <div id="folder-history-list">
+                    <!-- History items will be inserted here -->
+                </div>
+            </div>
+            <div class="folder-history-actions">
+                <button id="folder-history-new" class="folder-history-btn primary">
+                    📂 Browse for New Folder
+                </button>
+                <button id="folder-history-clear" class="folder-history-btn secondary">
+                    🗑️ Clear History
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
     
     <!-- Scripts -->
     <script src="performance-manager.js"></script>
@@ -430,6 +473,7 @@
     <script src="custom-metadata-store.js"></script>
     <script src="folder-persistence.js"></script>
     <script src="volume-control.js"></script>
+    <script src="lyrics-manager.js"></script>
     <script src="script.js"></script>
     <script src="mobile.js"></script>
     <script src="sw-init.js"></script>
