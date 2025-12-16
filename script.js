@@ -147,6 +147,29 @@ if (debugMode) {
     }, 5000); // Log every 5 seconds
 }
 
+    // 🎵 Initialize Background Audio Handler early (but after player exists)
+if (window.backgroundAudioHandler) {
+    backgroundAudioHandler.init({
+        player: player,
+        playlist: () => playlist,  // Pass as function for live updates
+        getCurrentTrackIndex: () => currentTrackIndex,
+        onMediaAction: {
+            previous: () => {
+                if (!prevButton.disabled) playPrevious();
+            },
+            next: () => {
+                if (!nextButton.disabled) playNext();
+            }
+        }
+    }).then(success => {
+        if (success) {
+            debugLog('✅ Background audio system activated', 'success');
+        } else {
+            debugLog('⚠️ Background audio system initialized with warnings', 'warning');
+        }
+    });
+}
+
     // Initialize volume control
     volumeControl = new VolumeControl(player, debugLog);
 
@@ -407,45 +430,65 @@ function setupAudioContext() {
             dataArray = new Uint8Array(bufferLength);
             
         } else {
-            // Create our own audio context
-            audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            analyser = audioContext.createAnalyser();
-            analyser.fftSize = APP_CONFIG.FFT_SIZE;
-            bufferLength = analyser.frequencyBinCount;
-            dataArray = new Uint8Array(bufferLength);
+    // Create our own audio context
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = APP_CONFIG.FFT_SIZE;
+    bufferLength = analyser.frequencyBinCount;
+    dataArray = new Uint8Array(bufferLength);
+    
+    // Create equalizer filters
+    bassFilter = audioContext.createBiquadFilter();
+    bassFilter.type = 'lowshelf';
+    bassFilter.frequency.value = APP_CONFIG.BASS_FREQ_HZ;
+    bassFilter.gain.value = 0;
+    
+    midFilter = audioContext.createBiquadFilter();
+    midFilter.type = 'peaking';
+    midFilter.frequency.value = APP_CONFIG.MID_FREQ_HZ;
+    midFilter.Q.value = 1;
+    midFilter.gain.value = 0;
+    
+    trebleFilter = audioContext.createBiquadFilter();
+    trebleFilter.type = 'highshelf';
+    trebleFilter.frequency.value = APP_CONFIG.TREBLE_FREQ_HZ;
+    trebleFilter.gain.value = 0;
+    
+    // ✅ FIX: Check if background-audio-handler already created the source
+    try {
+        // Try to get existing source from background handler
+        if (window.sharedAudioSource) {
+            debugLog('✅ Reusing audio source from background handler', 'success');
+            audioSource = window.sharedAudioSource;
             
-            // Create equalizer filters
-            bassFilter = audioContext.createBiquadFilter();
-            bassFilter.type = 'lowshelf';
-            bassFilter.frequency.value = APP_CONFIG.BASS_FREQ_HZ;
-            bassFilter.gain.value = 0;
-            
-            midFilter = audioContext.createBiquadFilter();
-            midFilter.type = 'peaking';
-            midFilter.frequency.value = APP_CONFIG.MID_FREQ_HZ;
-            midFilter.Q.value = 1;
-            midFilter.gain.value = 0;
-            
-            trebleFilter = audioContext.createBiquadFilter();
-            trebleFilter.type = 'highshelf';
-            trebleFilter.frequency.value = APP_CONFIG.TREBLE_FREQ_HZ;
-            trebleFilter.gain.value = 0;
-            
-            // Connect audio chain
+            // Disconnect from its current destination
             try {
-                audioSource = audioContext.createMediaElementSource(player);
-                audioSource.connect(bassFilter);
-                bassFilter.connect(midFilter);
-                midFilter.connect(trebleFilter);
-                trebleFilter.connect(analyser);
-                analyser.connect(audioContext.destination);
-                
-                debugLog('✅ Audio chain connected successfully', 'success');
-            } catch (err) {
-                debugLog('❌ Failed to connect audio: ' + err.message, 'error');
-                return;
+                audioSource.disconnect();
+            } catch (e) {
+                // Already disconnected, that's fine
             }
+        } else {
+            // Create new source (first time setup)
+            audioSource = audioContext.createMediaElementSource(player);
+            debugLog('✅ Created new audio source', 'success');
         }
+        
+        // Connect the full chain
+        audioSource.connect(bassFilter);
+        bassFilter.connect(midFilter);
+        midFilter.connect(trebleFilter);
+        trebleFilter.connect(analyser);
+        analyser.connect(audioContext.destination);
+        
+        debugLog('✅ Audio chain connected successfully', 'success');
+    } catch (err) {
+        debugLog('❌ Failed to connect audio: ' + err.message, 'error');
+        
+        // ✅ CRITICAL: Don't return - try to salvage what we can
+        // If source creation failed, we can still use the analyser for visualization
+        debugLog('⚠️ Continuing with limited audio support', 'warning');
+    }
+}
         
         // Pass to lyrics manager
         if (lyricsManager && typeof lyricsManager.setAudioContext === 'function') {
@@ -768,6 +811,11 @@ if (jumpToCurrentBtn) {
     
     // Display metadata
     displayMetadata(track.metadata);
+
+           // 🎵 Update background handler metadata
+    if (backgroundAudioHandler) {
+        backgroundAudioHandler.updateMediaSessionMetadata(true);
+    }
     
     // ✅ FIX: Initialize audio system BEFORE playback
     if (!audioContext) {
@@ -838,80 +886,6 @@ if (crossfadeManager && crossfadeManager.enabled && currentTrackIndex + 1 < play
 }
 }
 
-        // --- Media Session API (Hardware Controls Support) ---
-        function updateMediaSession() {
-            if (!('mediaSession' in navigator)) {
-                debugLog('Media Session API not supported', 'warning');
-                return;
-            }
-            
-            if (currentTrackIndex === -1 || playlist.length === 0) {
-                navigator.mediaSession.metadata = null;
-                return;
-            }
-            
-            const track = playlist[currentTrackIndex];
-            const metadata = track.metadata;
-            
-            // Set metadata for lock screen / notification
-            navigator.mediaSession.metadata = new MediaMetadata({
-                title: metadata?.title || track.fileName,
-                artist: metadata?.artist || 'Unknown Artist',
-                album: metadata?.album || 'Unknown Album',
-                artwork: metadata?.image ? [
-                    { src: metadata.image, sizes: '512x512', type: 'image/jpeg' }
-                ] : []
-            });
-            
-            // Set action handlers for hardware controls
-            navigator.mediaSession.setActionHandler('play', () => {
-                player.play();
-                debugLog('Media key: Play', 'success');
-            });
-            
-            navigator.mediaSession.setActionHandler('pause', () => {
-                player.pause();
-                debugLog('Media key: Pause', 'success');
-            });
-            
-            navigator.mediaSession.setActionHandler('previoustrack', () => {
-                if (!prevButton.disabled) {
-                    playPrevious();
-                    debugLog('Media key: Previous', 'success');
-                }
-            });
-            
-            navigator.mediaSession.setActionHandler('nexttrack', () => {
-                if (!nextButton.disabled) {
-                    playNext();
-                    debugLog('Media key: Next', 'success');
-                }
-            });
-            
-            navigator.mediaSession.setActionHandler('seekbackward', (details) => {
-                const skipTime = details.seekOffset || 10;
-                player.currentTime = Math.max(player.currentTime - skipTime, 0);
-                debugLog(`Media key: Seek backward ${skipTime}s`, 'success');
-            });
-            
-            navigator.mediaSession.setActionHandler('seekforward', (details) => {
-                const skipTime = details.seekOffset || 10;
-                player.currentTime = Math.min(player.currentTime + skipTime, player.duration);
-                debugLog(`Media key: Seek forward ${skipTime}s`, 'success');
-            });
-            
-            navigator.mediaSession.setActionHandler('seekto', (details) => {
-                if (details.seekTime && player.duration) {
-                    player.currentTime = details.seekTime;
-                    debugLog(`Media key: Seek to ${details.seekTime}s`, 'success');
-                }
-            });
-            
-            // Update playback state
-            navigator.mediaSession.playbackState = player.paused ? 'paused' : 'playing';
-            
-            debugLog('Media Session updated for hardware controls', 'success');
-        }
 
 async function playNext() {
     // ✅ ADD: Remember volume for current track before switching
@@ -1350,31 +1324,36 @@ playlistRenderer.render();
             }
         });
         
-        // Visualizer control events
         player.addEventListener('play', () => {
     if (audioContext && audioContext.state === 'suspended') {
         audioContext.resume();
     }
     
-    // OPTIMIZATION: Notify performance manager
+    // 🎵 Notify background handler
+    if (backgroundAudioHandler) {
+        backgroundAudioHandler.updatePlaybackState('playing');
+    }
+    
     perfManager.setPlayState(true);
     
-    // Restart visualizer when playing
     if (!visualizerAnimationId) {
         startVisualizer();
     }
     updateMediaSession();
 });
+
         
-       player.addEventListener('pause', () => {
+player.addEventListener('pause', () => {
     if (audioContext && audioContext.state === 'running') {
         audioContext.suspend();
     }
     
-    // OPTIMIZATION: Notify performance manager
-    perfManager.setPlayState(false);
+    // 🎵 Notify background handler
+    if (backgroundAudioHandler) {
+        backgroundAudioHandler.updatePlaybackState('paused');
+    }
     
-    // Visualizer will auto-stop in next frame due to paused check
+    perfManager.setPlayState(false);
     updateMediaSession();
 });
 
