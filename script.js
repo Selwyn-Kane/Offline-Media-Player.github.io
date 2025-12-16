@@ -53,6 +53,8 @@ let djModeManager = null;
 
 // Color extraction cache (CRITICAL - was missing!)
 const colorCache = new Map();
+// Register cache with performance manager for monitoring
+window.colorCache = colorCache;
 
 let backgroundAnalysisRunning = false;
 
@@ -136,7 +138,14 @@ generator = new SmartPlaylistGenerator(analyzer, debugLog);
         const trebleValue = document.getElementById('treble-value');
         const eqResetBtn = document.getElementById('eq-reset');
         const perfManager = new PerformanceManager(debugLog);
-        debugLog('✅ Performance manager initialized', 'success');
+        debugLog('✅ Advanced performance manager initialized', 'success');
+
+// Display performance stats in debug mode
+if (debugMode) {
+    setInterval(() => {
+        if (debugMode) perfManager.logStatus();
+    }, 5000); // Log every 5 seconds
+}
 
     // Initialize volume control
     volumeControl = new VolumeControl(player, debugLog);
@@ -146,6 +155,23 @@ if (typeof CustomBackgroundManager !== 'undefined') {
     const backgroundManager = new CustomBackgroundManager(debugLog);
     debugLog('✅ Custom background manager initialized', 'success');
 }
+
+     // ✅ ADD THIS - Initialize playlist renderer
+    const playlistRenderer = new PlaylistRenderer(debugLog);
+    playlistRenderer.init({
+        playlistItems: document.getElementById('playlist-items'),
+        playlistSearch: document.getElementById('playlist-search'),
+        clearButton: document.getElementById('clear-playlist'),
+        jumpToCurrentBtn: document.getElementById('jump-to-current')
+    });
+    
+    // Set callbacks
+    playlistRenderer.setCallbacks({
+        onTrackClick: (index) => loadTrack(index),
+        onEditClick: (index) => openMetadataEditorForTrack(index)
+    });
+    
+    debugLog('✅ Playlist renderer ready', 'success');
         
         // --- Color Extraction Functions ---
         function rgbToHex(r, g, b) {
@@ -163,13 +189,19 @@ function extractDominantColor(imageUrl) {
         img.crossOrigin = "Anonymous";
         img.onload = () => {
             try {
-                
                 // Offscreen canvas for better performance
                 const canvas = document.createElement('canvas');
                 const ctx = canvas.getContext('2d', { willReadFrequently: true });
                 
+                // 🆕 USE PERFORMANCE-OPTIMIZED SETTINGS
+                const colorSettings = perfManager.getColorExtractionSettings();
+                const sampleSize = colorSettings.sampleSize;
+                const skipPixels = colorSettings.skipPixels;
+                
+                canvas.width = sampleSize;
+                canvas.height = sampleSize;
+                
                 // Use even smaller sample size for speed
-                const sampleSize = 50;
                 canvas.width = sampleSize;
                 canvas.height = sampleSize;
                 
@@ -331,104 +363,143 @@ debugLog('✅ Enhanced Lyrics Manager initialized', 'success');
         }
         
         // --- Audio Visualizer Functions ---
-       function setupAudioContext() {
+function setupAudioContext() {
     console.log('setupAudioContext called, audioContext exists?', !!audioContext);
-    console.log('autoEQManager exists?', !!autoEQManager);
     
+    // ✅ CRITICAL: If audioContext exists, we're already set up - just ensure managers exist
     if (audioContext) {
-        console.log('Audio context already exists, returning early');
-        // Audio context already exists, but ensure autoEQManager exists
+        console.log('Audio context already exists - ensuring managers are initialized');
+        
+        // Create managers if they don't exist
+        if (!audioPresetsManager && bassFilter && midFilter && trebleFilter) {
+            audioPresetsManager = new AudioPresetsManager(bassFilter, midFilter, trebleFilter, debugLog);
+            audioPresetsManager.loadSavedPreset();
+            debugLog('✅ Audio presets manager initialized (late)', 'success');
+            populatePresetDropdown();
+        }
+        
         if (!autoEQManager && audioPresetsManager) {
-            console.log('Creating autoEQManager (late initialization)');
             autoEQManager = new AutoEQManager(audioPresetsManager, debugLog);
             debugLog('✅ Auto-EQ system initialized (late)', 'success');
         }
+        
+        if (!crossfadeManager) {
+            crossfadeManager = new CrossfadeManager(audioContext, debugLog);
+            debugLog('✅ Crossfade system initialized (late)', 'success');
+        }
+        
+        // ALWAYS return - never recreate audio context
         return;
     }
-    if (audioContext) return; // Already set up
     
     try {
-        audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        analyser = audioContext.createAnalyser();
-        analyser.fftSize = APP_CONFIG.FFT_SIZE;
-        bufferLength = analyser.frequencyBinCount;
-        dataArray = new Uint8Array(bufferLength);
-        // Pass audio context to lyrics manager
-        if (lyricsManager) {
+        // ✅ FIX: Check if background-audio-handler already created everything
+        if (window.sharedAudioContext && window.sharedAnalyser) {
+            debugLog('✅ Using audio system from background-audio-handler', 'success');
+            audioContext = window.sharedAudioContext;
+            analyser = window.sharedAnalyser;
+            audioSource = window.sharedAudioSource;
+            bassFilter = window.sharedBassFilter;
+            midFilter = window.sharedMidFilter;
+            trebleFilter = window.sharedTrebleFilter;
+            
+            bufferLength = analyser.frequencyBinCount;
+            dataArray = new Uint8Array(bufferLength);
+            
+        } else {
+            // Create our own audio context
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            analyser = audioContext.createAnalyser();
+            analyser.fftSize = APP_CONFIG.FFT_SIZE;
+            bufferLength = analyser.frequencyBinCount;
+            dataArray = new Uint8Array(bufferLength);
+            
+            // Create equalizer filters
+            bassFilter = audioContext.createBiquadFilter();
+            bassFilter.type = 'lowshelf';
+            bassFilter.frequency.value = APP_CONFIG.BASS_FREQ_HZ;
+            bassFilter.gain.value = 0;
+            
+            midFilter = audioContext.createBiquadFilter();
+            midFilter.type = 'peaking';
+            midFilter.frequency.value = APP_CONFIG.MID_FREQ_HZ;
+            midFilter.Q.value = 1;
+            midFilter.gain.value = 0;
+            
+            trebleFilter = audioContext.createBiquadFilter();
+            trebleFilter.type = 'highshelf';
+            trebleFilter.frequency.value = APP_CONFIG.TREBLE_FREQ_HZ;
+            trebleFilter.gain.value = 0;
+            
+            // Connect audio chain
+            try {
+                audioSource = audioContext.createMediaElementSource(player);
+                audioSource.connect(bassFilter);
+                bassFilter.connect(midFilter);
+                midFilter.connect(trebleFilter);
+                trebleFilter.connect(analyser);
+                analyser.connect(audioContext.destination);
+                
+                debugLog('✅ Audio chain connected successfully', 'success');
+            } catch (err) {
+                debugLog('❌ Failed to connect audio: ' + err.message, 'error');
+                return;
+            }
+        }
+        
+        // Pass to lyrics manager
+        if (lyricsManager && typeof lyricsManager.setAudioContext === 'function') {
             lyricsManager.setAudioContext(analyser, dataArray, bufferLength);
         }
         
-        // Create equalizer filters
-        bassFilter = audioContext.createBiquadFilter();
-        bassFilter.type = 'lowshelf';
-        bassFilter.frequency.value = APP_CONFIG.BASS_FREQ_HZ;
-        bassFilter.gain.value = 0;
-        
-        midFilter = audioContext.createBiquadFilter();
-        midFilter.type = 'peaking';
-        midFilter.frequency.value = APP_CONFIG.MID_FREQ_HZ;
-        midFilter.Q.value = 1;
-        midFilter.gain.value = 0;
-        
-        trebleFilter = audioContext.createBiquadFilter();
-        trebleFilter.type = 'highshelf';
-        trebleFilter.frequency.value = APP_CONFIG.TREBLE_FREQ_HZ;
-        trebleFilter.gain.value = 0;
-        
-        // Connect audio chain
-        if (!audioSource) {
-            audioSource = audioContext.createMediaElementSource(player);
-            audioSource.connect(bassFilter);
-            bassFilter.connect(midFilter);
-            midFilter.connect(trebleFilter);
-            trebleFilter.connect(analyser);
-            analyser.connect(audioContext.destination);
-        }
-        
-        // Initialize visualizer only if analyser is valid
+        // Initialize visualizer
         if (analyser && canvas) {
             visualizerManager.initMainVisualizer(canvas, analyser);
-            debugLog('Audio visualizer and equalizer initialized', 'success');
-        } else {
-            debugLog('Visualizer initialization skipped: analyser or canvas not ready', 'warning');
+            debugLog('Audio visualizer initialized', 'success');
         }
-        // ✅ ADD: Initialize volume control's audio nodes
-    if (volumeControl && audioContext && audioSource) {
-        volumeControl.initAudioNodes(audioContext, audioSource, audioContext.destination);
-    }
+
+        // Apply performance-optimized settings
+        const vizSettings = perfManager.getVisualizerSettings();
+        analyser.fftSize = vizSettings.fftSize;
+        debugLog(`🎨 Visualizer optimized: FFT=${vizSettings.fftSize}, Effects=${vizSettings.effects}`, 'info');
+        
+        // Initialize volume control
+        if (volumeControl && audioContext && audioSource) {
+            volumeControl.initAudioNodes(audioContext, audioSource, audioContext.destination);
+        }
         
         setupEqualizerControls();
 
-// Initialize presets AFTER filters are created
-audioPresetsManager = new AudioPresetsManager(bassFilter, midFilter, trebleFilter, debugLog);
-audioPresetsManager.loadSavedPreset();
+        // Initialize presets manager
+        audioPresetsManager = new AudioPresetsManager(bassFilter, midFilter, trebleFilter, debugLog);
+        audioPresetsManager.loadSavedPreset();
+        debugLog('✅ Audio presets manager initialized', 'success');
 
-        // ✅ ADD THESE LINES HERE:
-if (!autoEQManager) {
-    autoEQManager = new AutoEQManager(audioPresetsManager, debugLog);
-    debugLog('✅ Auto-EQ system initialized', 'success');
-}
+        // Initialize Auto-EQ
+        if (!autoEQManager) {
+            autoEQManager = new AutoEQManager(audioPresetsManager, debugLog);
+            debugLog('✅ Auto-EQ system initialized', 'success');
+        }
 
-// Now populate the dropdown since audioPresetsManager exists
-populatePresetDropdown();
+        // Populate preset dropdown
+        populatePresetDropdown();
 
-        // âœ… Initialize CrossfadeManager NOW that audioContext exists
-if (!crossfadeManager) {
-    crossfadeManager = new CrossfadeManager(audioContext, debugLog);
-    debugLog('âœ… Crossfade system initialized', 'success');
-}
+        // Initialize crossfade
+        if (!crossfadeManager) {
+            crossfadeManager = new CrossfadeManager(audioContext, debugLog);
+            debugLog('✅ Crossfade system initialized', 'success');
+        }
 
-// âœ… Initialize AutoEQManager with presets manager
-if (autoEQManager && !autoEQManager.presetsManager) {
-    autoEQManager.presetsManager = audioPresetsManager;
-    debugLog('âœ… Auto-EQ system linked', 'success');
-}
+        // Link Auto-EQ with presets
+        if (autoEQManager && !autoEQManager.presetsManager) {
+            autoEQManager.presetsManager = audioPresetsManager;
+            debugLog('✅ Auto-EQ system linked', 'success');
+        }
 
-// Initialize crossfade audio chain
-if (crossfadeManager && !crossfadeManager.currentPlayer) {
-    const player = document.getElementById('audio-player');
-    crossfadeManager.init(player, audioSource, audioContext.destination);
-}
+        // Initialize crossfade audio chain
+        if (crossfadeManager && !crossfadeManager.currentPlayer) {
+            crossfadeManager.init(player, audioSource, audioContext.destination);
+        }
         
     } catch (error) {
         debugLog(`Audio setup failed: ${error.message}`, 'error');
@@ -436,83 +507,18 @@ if (crossfadeManager && !crossfadeManager.currentPlayer) {
 }
         
 function startVisualizer() {
+    // 🆕 CHECK IF VISUALIZER SHOULD RUN
     if (perfManager.shouldRunVisualizer() && analyser) {
         // Ensure visualizer is initialized before starting
         if (!visualizerManager.canvas) {
             visualizerManager.initMainVisualizer(canvas, analyser);
         }
-        visualizerManager.start(true);
+        
+        // 🆕 APPLY PERFORMANCE SETTINGS
+        const vizSettings = perfManager.getVisualizerSettings();
+        visualizerManager.start(true, vizSettings);
     }
 }
-    
-    function draw() {
-        // OPTIMIZED: Use performance manager
-        if (!perfManager.shouldRunVisualizer()) {
-            visualizerAnimationId = null;
-            // Draw static gradient and stop
-            const gradient = canvasCtx.createLinearGradient(0, 0, 0, canvas.height);
-            gradient.addColorStop(0, '#1a1a1a');
-            gradient.addColorStop(1, '#0a0a0a');
-            canvasCtx.fillStyle = gradient;
-            canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
-            return;
-        }
-        
-        visualizerAnimationId = requestAnimationFrame(draw);
-        
-        analyser.getByteFrequencyData(dataArray);
-        
-        // Clear canvas with gradient
-        const gradient = canvasCtx.createLinearGradient(0, 0, 0, canvas.height);
-        gradient.addColorStop(0, '#1a1a1a');
-        gradient.addColorStop(1, '#0a0a0a');
-        canvasCtx.fillStyle = gradient;
-        canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
-        
-        const barWidth = (canvas.width / bufferLength) * 2.5;
-        let barHeight;
-        let x = 0;
-        
-        for (let i = 0; i < bufferLength; i++) {
-            barHeight = (dataArray[i] / 255) * canvas.height * 0.8;
-            
-            // Create gradient for bars
-            const barGradient = canvasCtx.createLinearGradient(0, canvas.height - barHeight, 0, canvas.height);
-            
-            // Color based on frequency (low = red, high = pink)
-            const hue = (i / bufferLength) * 20 + 340;
-            const saturation = 80 + (dataArray[i] / 255) * 20;
-            const lightness = 45 + (dataArray[i] / 255) * 15;
-            
-            barGradient.addColorStop(0, `hsl(${hue}, ${saturation}%, ${lightness}%)`);
-            barGradient.addColorStop(1, `hsl(${hue}, ${saturation}%, ${lightness - 20}%)`);
-            
-            canvasCtx.fillStyle = barGradient;
-            
-            // Draw bar with rounded top
-            const barX = x;
-            const barY = canvas.height - barHeight;
-            const radius = barWidth / 2;
-            
-            canvasCtx.beginPath();
-            canvasCtx.moveTo(barX, canvas.height);
-            canvasCtx.lineTo(barX, barY + radius);
-            canvasCtx.quadraticCurveTo(barX, barY, barX + radius, barY);
-            canvasCtx.lineTo(barX + barWidth - radius, barY);
-            canvasCtx.quadraticCurveTo(barX + barWidth, barY, barX + barWidth, barY + radius);
-            canvasCtx.lineTo(barX + barWidth, canvas.height);
-            canvasCtx.closePath();
-            canvasCtx.fill();
-            
-            x += barWidth + 1;
-        }
-        
-        // Add glow effect
-        canvasCtx.shadowBlur = 10;
-        canvasCtx.shadowColor = 'rgba(220, 53, 69, 0.3)';
-    }
-    
-    draw();
         
         function stopVisualizer() {
     visualizerManager.stop();
@@ -525,18 +531,6 @@ if ('serviceWorker' in navigator) {
             handleWidgetCommand(event.data.action);
         }
     });
-}
-
-    function getMoodColorFromAnalysis(mood) {
-    const moodColors = {
-        'energetic': { r: 255, g: 87, b: 51 },    // Red-Orange
-        'calm': { r: 51, g: 153, b: 255 },        // Blue
-        'bright': { r: 255, g: 215, b: 0 },       // Gold/Yellow
-        'dark': { r: 147, g: 51, b: 234 },        // Purple
-        'neutral': { r: 220, g: 53, b: 69 }       // Default red
-    };
-    
-    return moodColors[mood] || moodColors.neutral;
 }
 
 function handleWidgetCommand(action) {
@@ -717,124 +711,6 @@ async function displayMetadata(metadata) {
             }
         }
         
-        // --- Playlist Display Functions (User's Code) ---
- function renderPlaylist() {
-    playlistItems.innerHTML = '';
-    if (playlist.length === 0) {
-        playlistItems.innerHTML = '<div class="empty-playlist">No tracks loaded yet. Click "Load Music & Lyrics" to get started!</div>';
-        clearButton.disabled = true;
-        return;
-    }
-    
-    clearButton.disabled = false;
-    playlist.forEach((track, index) => {
-        const item = document.createElement('div');
-        item.className = 'playlist-item';
-        if (index === currentTrackIndex) {
-            item.classList.add('playing');
-        }
-
-        const thumbnail = document.createElement('div');
-        thumbnail.className = 'playlist-item-thumbnail';
-        
-        if (track.metadata?.image) {
-            const img = document.createElement('img');
-            img.src = track.metadata.image;
-            img.style.width = '100%';
-            img.style.height = '100%';
-            img.style.objectFit = 'cover';
-            img.style.borderRadius = '5px';
-            thumbnail.appendChild(img);
-            thumbnail.classList.add('loaded');
-        } else {
-            thumbnail.innerHTML = '🎵';
-        }
-        
-        const badges = [];
-        if (track.vtt) badges.push('<span class="badge badge-lyrics">🎤 Lyrics</span>');
-        if (track.metadata?.hasMetadata) badges.push('<span class="badge badge-metadata">🏷️ ID3</span>');
-        if (track.hasDeepAnalysis) badges.push('<span class="badge badge-analysis">🔍 Deep</span>');
-        
-        const infoDiv = document.createElement('div');
-        infoDiv.className = 'playlist-item-info';
-        infoDiv.innerHTML = `
-    <div class="playlist-item-title">${track.metadata?.title || track.fileName}</div>
-    <div class="playlist-item-artist">${track.metadata?.artist || 'Unknown Artist'}</div>
-    ${badges.length > 0 ? `<div class="playlist-item-badges">${badges.join('')}</div>` : ''}
-`;
-
-// ✅ NEW: Apply mood-based background color if analysis exists
-if (track.analysis && track.analysis.mood) {
-    const moodKey = track.analysis.mood.toLowerCase();
-    const moodColor = getMoodColorFromAnalysis(track.analysis.mood);
-    const { r, g, b } = moodColor;
-    
-    // Apply subtle gradient based on mood
-    const darkerR = Math.max(0, Math.floor(r * 0.2));
-    const darkerG = Math.max(0, Math.floor(g * 0.2));
-    const darkerB = Math.max(0, Math.floor(b * 0.2));
-    const lighterR = Math.min(255, Math.floor(r * 0.4));
-    const lighterG = Math.min(255, Math.floor(g * 0.4));
-    const lighterB = Math.min(255, Math.floor(b * 0.4));
-    
-    item.style.background = `linear-gradient(90deg, rgb(${darkerR}, ${darkerG}, ${darkerB}) 0%, rgb(${lighterR}, ${lighterG}, ${lighterB}) 100%)`;
-    item.style.borderColor = `rgb(${r}, ${g}, ${b})`;
-    
-// Add mood indicator badge
-const moodEmojis = {
-    'energetic': '⚡',
-    'calm': '🌊',
-    'bright': '☀️',
-    'dark': '🌙',
-    'neutral': '🎵'
-};
-
-const moodBadge = document.createElement('span');
-moodBadge.className = 'badge badge-mood';
-moodBadge.style.cssText = `
-    background: rgba(${r}, ${g}, ${b}, 0.3);
-    color: rgb(${Math.min(255, r + 50)}, ${Math.min(255, g + 50)}, ${Math.min(255, b + 50)});
-    border: 1px solid rgb(${r}, ${g}, ${b});
-`; 
-
-// FIX: Convert to lowercase for emoji lookup
-const moodEmoji = moodEmojis[moodKey] || '🎵';
-moodBadge.textContent = `${moodEmoji} ${track.analysis.mood}`;
-    
-    const badgesDiv = infoDiv.querySelector('.playlist-item-badges') || (() => {
-        const div = document.createElement('div');
-        div.className = 'playlist-item-badges';
-        infoDiv.appendChild(div);
-        return div;
-    })();
-    
-    badgesDiv.appendChild(moodBadge);
-}
-        const numberDiv = document.createElement('div');
-        numberDiv.className = 'playlist-item-number';
-        numberDiv.textContent = index + 1;
-        
-        // Add edit button
-        const editBtn = document.createElement('button');
-        editBtn.className = 'playlist-item-edit-btn';
-        editBtn.innerHTML = '✏️';
-        editBtn.title = 'Edit Metadata';
-        editBtn.onclick = (e) => {
-            e.stopPropagation(); // Don't trigger track load
-            openMetadataEditorForTrack(index);
-        };
-        
-        item.appendChild(numberDiv);
-        item.appendChild(thumbnail);
-        item.appendChild(infoDiv);
-        item.appendChild(editBtn);
-        
-        item.onclick = () => loadTrack(index);
-        playlistItems.appendChild(item);
-    });
-
-    updatePlaylistSearch();
-}
 
     const playlistSearch = document.getElementById('playlist-search');
 
@@ -854,30 +730,6 @@ playlistSearch.oninput = (e) => {
     });
 };
 
-// Show search box when playlist has 10+ tracks
-function updatePlaylistSearch() {
-    if (playlist.length >= 10) {
-        playlistSearch.style.display = 'block';
-    } else {
-        playlistSearch.style.display = 'none';
-    }
-}
-
-// Call this in renderPlaylist()
-
-        function updatePlaylistHighlight() {
-            // ... (Your existing updatePlaylistHighlight logic here) ...
-            const items = playlistItems.querySelectorAll('.playlist-item');
-            items.forEach((item, index) => {
-                if (index === currentTrackIndex) {
-                    item.classList.add('playing');
-                    item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                } else {
-                    item.classList.remove('playing');
-                }
-            });
-        }
-
     // Jump to Current Track button
 const jumpToCurrentBtn = document.getElementById('jump-to-current');
 
@@ -888,13 +740,6 @@ if (jumpToCurrentBtn) {
             currentItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
     };
-}
-    
-// Enable/disable based on whether track is playing
-function updateJumpButton() {
-    if (jumpToCurrentBtn) {
-        jumpToCurrentBtn.disabled = currentTrackIndex === -1;
-    }
 }
 
         // --- Playlist Management (User's Code) ---
@@ -969,7 +814,7 @@ function updateJumpButton() {
         debugLog(`VTT file NOT found for ${track.fileName}.`, 'warning');
     }
 
-updatePlaylistHighlight();
+playlistRenderer.updateHighlight(currentTrackIndex);
 prevButton.disabled = false;
 nextButton.disabled = false;
 
@@ -985,11 +830,8 @@ player.play().then(() => {
 }).catch(e => debugLog(`Playback prevented: ${e.message}`, 'warning'));
 
     updateMediaSession();
-    updateJumpButton();  // ADD THIS
-          // Update fullscreen lyrics if active
-if (fullscreenLyricsActive) {
-    renderFullscreenLyrics();
-}
+    playlistRenderer.updateJumpButton();
+
           // Preload next track for crossfade
 if (crossfadeManager && crossfadeManager.enabled && currentTrackIndex + 1 < playlist.length) {
     crossfadeManager.preloadNext(playlist[currentTrackIndex + 1]);
@@ -1090,7 +932,6 @@ async function playNext() {
         player.pause();
         trackTitle.textContent = "Playlist finished";
         debugLog('Playlist finished');
-        updateLyricHighlight();
         return;
     }
     
@@ -1201,23 +1042,17 @@ document.onmouseup = (e) => {
 
 
         // --- Event Handlers ---
-        loadButton.onclick = async () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'audio/*,.vtt';
-    input.multiple = true;
-    
-    // Android fix: add to DOM temporarily
-    input.style.display = 'none';
-    document.body.appendChild(input);
-    
-    input.onchange = (e) => {
-        handleFileLoad(e);
-        document.body.removeChild(input);
-    };
-    
-    // Android fix: small delay before click
-    setTimeout(() => input.click(), 100);
+loadButton.onclick = async () => {
+    try {
+        await fileLoadingManager.createFileInput({
+            accept: 'audio/*,.vtt,.txt',
+            multiple: true
+        });
+    } catch (err) {
+        if (err.message !== 'File selection cancelled') {
+            debugLog(`File loading failed: ${err.message}`, 'error');
+        }
+    }
 };
         
         // Drag and Drop implementation (NEW)
@@ -1233,183 +1068,122 @@ document.onmouseup = (e) => {
             }
         });
 
-        document.body.addEventListener('drop', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            dropZone.style.display = 'none';
-            
-            const files = Array.from(e.dataTransfer.files);
-            handleFileLoad({ target: { files: files } });
-        });
-        
-// ✅ FIXED: Consolidated file loading logic
-window.handleFileLoad = async function handleFileLoad(event) {
-    const files = Array.from(event.target.files);
-    if (files.length === 0) return;
+        document.body.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dropZone.style.display = 'none';
+    
+    const files = Array.from(e.dataTransfer.files);
+    await fileLoadingManager.loadFiles(files);
+});
+// ========== FILE LOADING MANAGER SETUP ==========
+let fileLoadingManager = null;
 
-    debugLog(`=== Loading ${files.length} files ===`);
-    playlistStatus.textContent = 'Loading files and extracting metadata...';
     
-    const audioFiles = files.filter(f => 
-        f.type.startsWith('audio/') || 
-        f.name.toLowerCase().match(/\.(mp3|wav|ogg|m4a|flac|aac|wma)$/)
-    );
-    const vttFiles = files.filter(f => f.name.toLowerCase().endsWith('.vtt'));
-    const analysisFiles = files.filter(f => f.name.toLowerCase().endsWith('.txt')); // ✅ NEW
+    // Initialize ENHANCED file loading manager
+fileLoadingManager = new EnhancedFileLoadingManager(debugLog, {
+    supportedAudioFormats: ['mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac', 'wma', 'opus', 'webm'],
+    maxConcurrent: 3,          // Process 3 files simultaneously
+    retryAttempts: 2,          // Retry failed files 2 times
+    fuzzyMatchThreshold: 0.8,  // 80% similarity for fuzzy matching
+    chunkSize: 5,              // Process in chunks of 5
+    enableCaching: true        // Cache processed results
+});
     
-    debugLog(`Found ${audioFiles.length} audio, ${vttFiles.length} VTT, and ${analysisFiles.length} analysis files`);
-
-    // Validate VTT files
-    for (const vtt of vttFiles) {
-        const validation = await vttParser.validateVTT(vtt);
-        if (!validation.valid) {
-            debugLog(`VTT file "${vtt.name}" is invalid: ${validation.reason}`, 'error');
-        }
-    }
+    // Inject dependencies
+    fileLoadingManager.init({
+        metadataParser: metadataParser,
+        vttParser: vttParser,
+        analysisParser: analysisParser,
+        customMetadataStore: customMetadataStore,
+        analyzer: analyzer
+    });
     
-    // ✅ NEW: Initialize analysis parser
-    const analysisParser = new AnalysisTextParser(debugLog);
+    // Set callbacks
+    fileLoadingManager.setCallbacks({
+    onLoadStart: (fileCount) => {
+        playlistStatus.textContent = '⚡ Enhanced loading: Scanning files...';
+        debugLog(`Starting enhanced load: ${fileCount} files...`, 'info');
+    },
     
-    // Build playlist
-    playlist = [];
+    onLoadProgress: (progress) => {
+        const cacheText = progress.fromCache ? ' (cached)' : '';
+        playlistStatus.textContent = `⚡ Processing ${progress.current}/${progress.total}: ${progress.filename}${cacheText}`;
+    },
     
-    for (const audioFile of audioFiles) {
-        const baseName = audioFile.name.split('.').slice(0, -1).join('.');
+    onFileProcessed: (entry) => {
+        // Optional: You can add per-file processing feedback here
+        debugLog(`✓ Processed: ${entry.fileName}`, 'info');
+    },
+    
+    onChunkComplete: (chunkData) => {
+        // Optional: Update UI after each chunk
+        debugLog(`Chunk ${chunkData.chunk}/${chunkData.total} complete (${chunkData.processed} files)`, 'success');
+    },
         
-        // Find matching VTT
-        const matchingVtt = vttFiles.find(vtt => {
-            const vttBaseName = vtt.name.split('.').slice(0, -1).join('.');
-            return vttBaseName === baseName;
-        });
-        
-        // ✅ NEW: Find matching analysis file
-        const matchingAnalysis = analysisFiles.find(txt => {
-            const txtBaseName = txt.name.split('.').slice(0, -1).join('.');
-            return txtBaseName === baseName;
-        });
-        
-        if (matchingVtt) {
-            debugLog(`✓ Matched: ${audioFile.name} ⟷ ${matchingVtt.name}`, 'success');
-        }
-        
-        // ✅ NEW: Parse analysis file if found
-        let parsedAnalysis = null;
-        if (matchingAnalysis) {
-            try {
-                const analysisText = await matchingAnalysis.text();
-                parsedAnalysis = analysisParser.parseAnalysisText(analysisText);
-                
-                if (analysisParser.isValidAnalysis(parsedAnalysis)) {
-                    debugLog(`✓ Loaded deep analysis: ${audioFile.name} ⟷ ${matchingAnalysis.name}`, 'success');
-                } else {
-                    debugLog(`⚠ Invalid analysis format: ${matchingAnalysis.name}`, 'warning');
-                    parsedAnalysis = null;
-                }
-            } catch (err) {
-                debugLog(`❌ Failed to parse analysis: ${err.message}`, 'error');
+        onLoadComplete: async (newPlaylist) => {
+            if (newPlaylist.length === 0) {
+                playlistStatus.textContent = 'No valid audio files found';
+                return;
             }
-        }
-        
-        // Extract metadata from file
-        let metadata = await metadataParser.extractMetadata(audioFile);
-        
-        // Check if we have custom metadata for this file
-        const customMeta = customMetadataStore.get(audioFile.name, audioFile.size);
-        if (customMeta) {
-            metadata = {
-                ...metadata,
-                ...customMeta,
-                image: metadata.image || customMeta.image,
-                hasMetadata: true,
-                isCustom: true
-            };
-            debugLog(`✏️ Using custom metadata for: ${audioFile.name}`, 'info');
-        }
-
-        // Create audio element to get duration
-        const tempAudio = new Audio();
-        tempAudio.src = URL.createObjectURL(audioFile);
-        const duration = await new Promise(resolve => {
-            const timeout = setTimeout(() => {
-                resolve(0);
-                URL.revokeObjectURL(tempAudio.src);
-            }, 5000);
             
-            tempAudio.addEventListener('loadedmetadata', () => {
-                clearTimeout(timeout);
-                resolve(tempAudio.duration);
-                URL.revokeObjectURL(tempAudio.src);
-            });
-            tempAudio.addEventListener('error', () => {
-                clearTimeout(timeout);
-                resolve(0);
-            });
-        });
-
-        const audioURL = URL.createObjectURL(audioFile);
-
-        // ✅ NEW: Prefer deep analysis over cached analysis
-        const finalAnalysis = parsedAnalysis || analyzer.analysisCache.get(audioFile.name);
-        
-        playlist.push({ 
-            audioURL: audioURL,
-            fileName: audioFile.name,
-            vtt: matchingVtt || null,
-            metadata: metadata || {
-                title: audioFile.name.split('.')[0],
-                artist: 'Unknown Artist',
-                album: 'Unknown Album',
-                image: null,
-                hasMetadata: false
-            },
-            duration: duration,
-            analysis: finalAnalysis,  // ✅ Use deep analysis if available
-            hasDeepAnalysis: !!parsedAnalysis  // ✅ NEW: Flag for deep analysis
-        });
-        
-        if (finalAnalysis) {
-            const source = parsedAnalysis ? 'deep analysis file' : 'cache';
-            debugLog(`📊 Loaded analysis from ${source}: ${audioFile.name}`, 'success');
-        }
-    }
-
-    if (playlist.length > 0) {
-        debugLog(`Playlist created with ${playlist.length} tracks`, 'success');
-        currentTrackIndex = 0;
-        updatePlaylistStatus();
-        renderPlaylist();
-        
-        // Load first track
-        setTimeout(() => {
-            loadTrack(0);
-        }, 150);
-        
-        // ✅ MODIFIED: Only start background analysis for tracks WITHOUT deep analysis
-        setTimeout(() => {
-            if (analyzer && playlist.length > 0) {
-                const needsAnalysis = playlist.filter(t => !t.hasDeepAnalysis && !t.analysis);
-                
-                if (needsAnalysis.length > 0) {
-                    debugLog(`🔍 Starting background analysis for ${needsAnalysis.length} unanalyzed tracks...`, 'info');
-                    startBackgroundAnalysis();
-                } else {
-                    debugLog(`✅ All tracks have deep analysis - skipping background analysis`, 'success');
+            // IMPORTANT: Stop current playback before reloading
+            player.pause();
+            player.src = '';
+            currentTrackIndex = -1;
+            
+            // Set new playlist
+            playlist = newPlaylist;
+            currentTrackIndex = 0;
+            
+            debugLog(`Playlist created with ${playlist.length} tracks`, 'success');
+            
+            updatePlaylistStatus();
+            playlistRenderer.setPlaylist(playlist, currentTrackIndex);
+            playlistRenderer.render();
+            
+            // Load first track
+            setTimeout(() => {
+                loadTrack(0);
+            }, 150);
+            
+            // Start background analysis for tracks WITHOUT deep analysis
+            setTimeout(() => {
+                if (analyzer && playlist.length > 0) {
+                    const needsAnalysis = playlist.filter(t => !t.hasDeepAnalysis && !t.analysis);
+                    
+                    if (needsAnalysis.length > 0) {
+                        debugLog(`🔍 Starting background analysis for ${needsAnalysis.length} unanalyzed tracks...`, 'info');
+                        startBackgroundAnalysis();
+                    } else {
+                        debugLog(`✅ All tracks have deep analysis - skipping background analysis`, 'success');
+                    }
                 }
-            }
-        }, 3000);
+            }, 3000);
+            
+            // Enable buttons
+            prevButton.disabled = false;
+            nextButton.disabled = false;
+            shuffleButton.disabled = false;
+            loopButton.disabled = false;
+            crossfadeButton.disabled = false;
+            autoEQButton.disabled = false;
+            djModeButton.disabled = false;
+            
+            // Save playlist
+            savePlaylistToStorage();
+            
+            // Update smart playlist button
+            updateSmartPlaylistButton();
+        },
         
-        prevButton.disabled = false;
-        nextButton.disabled = false;
-        shuffleButton.disabled = false;
-        loopButton.disabled = false;
-        crossfadeButton.disabled = false;
-        autoEQButton.disabled = false;
-        djModeButton.disabled = false;
-        
-        // Save playlist to localStorage
-        savePlaylistToStorage();
-    }
-};
+        onLoadError: (error) => {
+            playlistStatus.textContent = `Error: ${error.message}`;
+            debugLog(`File loading error: ${error.message}`, 'error');
+        }
+    });
+    
+    debugLog('✅ File Loading Manager initialized', 'success');
 
         // --- Playlist Persistence Functions ---
         function savePlaylistToStorage() {
@@ -1530,38 +1304,28 @@ window.handleFileLoad = async function handleFileLoad(event) {
             debugLog('Saved playlist cleared from storage', 'info');
         }
 
-        clearButton.onclick = () => {
+clearButton.onclick = () => {
     if (confirm('Clear entire playlist? This will stop playback and remove all loaded tracks.')) {
-        // Revoke all blob URLs to free memory
-        playlist.forEach(track => {
-            if (track.audioURL) {
-                URL.revokeObjectURL(track.audioURL);
-            }
-            if (track.metadata?.image?.startsWith('blob:')) {
-                URL.revokeObjectURL(track.metadata.image);
-            }
-        });
+        // Use the manager's cleanup method
+        fileLoadingManager.cleanupPlaylist(playlist);
         
         playlist = [];
         currentTrackIndex = -1;
         player.pause();
         player.src = '';
         clearMetadata();
-        renderPlaylist();
+        playlistRenderer.setPlaylist(playlist, currentTrackIndex);
+playlistRenderer.render();
         updatePlaylistStatus();
         prevButton.disabled = true;
-        updateJumpButton();
+        playlistRenderer.updateJumpButton();
         nextButton.disabled = true;
         shuffleButton.disabled = true;
         loopButton.disabled = true;
-        cachedLyricLines = [];
-        updateJumpButton();
         
-        // Clear saved playlist from storage
         clearSavedPlaylist();
         
         debugLog('Playlist cleared (memory freed)', 'warning');
-
         updateSmartPlaylistButton();
     }
 };
@@ -1622,16 +1386,17 @@ window.handleFileLoad = async function handleFileLoad(event) {
 player.addEventListener('timeupdate', () => {
     if (isSeekingProg) return;
     
-    // OPTIMIZED: Use performance manager for adaptive frame rates
+    // 🆕 PERFORMANCE-AWARE UPDATES
     if (perfManager.shouldUpdate('progress')) {
         const percent = (player.currentTime / player.duration) * 100;
         progressBar.style.width = `${percent}%`;
         currentTimeDisplay.textContent = formatTime(player.currentTime);
     }
     
-    // ✅ REPLACE WITH THIS:
-    if (perfManager.shouldUpdate('lyrics') && lyricsManager) {
-        lyricsManager.update(player.currentTime, compactMode);
+    // Update lyrics with performance optimization
+    if (lyricsManager && perfManager.shouldUpdate('lyrics')) {
+        const lyricsSettings = perfManager.getLyricsSettings();
+        lyricsManager.update(player.currentTime, compactMode, lyricsSettings);
     }
 });
 
@@ -1656,7 +1421,8 @@ player.addEventListener('timeupdate', () => {
         currentTrackIndex = playlist.findIndex(track => track === currentTrack);
         
         shuffleButton.classList.add('active');
-        renderPlaylist();
+        playlistRenderer.setPlaylist(playlist, currentTrackIndex);
+playlistRenderer.render();
     } else {
         debugLog('Shuffle disabled');
         shuffleButton.classList.remove('active');
@@ -1710,22 +1476,26 @@ if (crossfadeButton) {
 const autoEQButton = document.getElementById('auto-eq-button');
 if (autoEQButton) {
     autoEQButton.onclick = () => {
-        // ✅ Better check: test if track is loaded
         if (currentTrackIndex === -1 || playlist.length === 0) {
             alert('Please load a track first!');
             return;
         }
         
-        // ✅ Initialize audio system if needed
+        // Ensure audio system is initialized
         if (!audioContext) {
             setupAudioContext();
         }
         
-        // Now autoEQManager should exist
-        if (!autoEQManager) {
-            console.error('autoEQManager failed to initialize!');
-            alert('Audio system initialization failed. Try playing the track first.');
+        // ✅ FIX: Check for the actual dependency (audioPresetsManager)
+        if (!audioPresetsManager) {
+            alert('Audio system not initialized. Please play the track for a moment first.');
             return;
+        }
+        
+        // ✅ FIX: Create autoEQManager on-demand if needed
+        if (!autoEQManager) {
+            autoEQManager = new AutoEQManager(audioPresetsManager, debugLog);
+            debugLog('✅ Auto-EQ system initialized on-demand', 'success');
         }
         
         const newState = !autoEQManager.enabled;
@@ -1741,7 +1511,7 @@ if (autoEQButton) {
         debugLog(`Auto-EQ ${newState ? 'enabled' : 'disabled'}`, 'info');
     };
 }
-
+    
     // Volume Boost Button
 const volumeBoostButton = document.getElementById('volume-boost-button');
 if (volumeBoostButton && volumeControl) {
@@ -1783,7 +1553,8 @@ if (djModeButton) {
             djModeButton.textContent = '🎧 DJ Mode On';
             
             // Re-render playlist
-            renderPlaylist();
+            playlistRenderer.setPlaylist(playlist, currentTrackIndex);
+playlistRenderer.render();
             
             localStorage.setItem('djModeEnabled', 'true');
             debugLog('DJ Mode enabled - playlist reordered', 'success');
@@ -1797,7 +1568,8 @@ if (djModeButton) {
             djModeButton.textContent = '🎧 DJ Mode Off';
             
             // Re-render playlist
-            renderPlaylist();
+            playlistRenderer.setPlaylist(playlist, currentTrackIndex);
+playlistRenderer.render();
             
             localStorage.removeItem('djModeEnabled');
             debugLog('DJ Mode disabled - original order restored', 'info');
@@ -1880,6 +1652,15 @@ case 'O':
                 }
         });
 
+    const clearCacheBtn = document.getElementById('clear-cache-btn');
+if (clearCacheBtn) {
+    clearCacheBtn.onclick = () => {
+        if (confirm('Clear file processing cache?')) {
+            fileLoadingManager.clearCache();
+            debugLog('Cache cleared', 'success');
+        }
+    };
+}
 
 // Folder Selection Button Handler (ENHANCED WITH PERSISTENCE)
 const folderButton = document.getElementById('folder-button');
@@ -2145,70 +1926,13 @@ async function loadFromFolder() {
     }
     
     try {
-        debugLog('Scanning folder for music files...', 'info');
-        playlistStatus.textContent = 'Scanning folder...';
-        
-        const audioFiles = [];
-        const vttFiles = [];
-        const analysisFiles = [];
-        
-        // Scan through all files in the folder
-        for await (const entry of folderHandle.values()) {
-            if (entry.kind === 'file') {
-                const file = await entry.getFile();
-                
-                // Check if it's an audio file
-                if (file.type.startsWith('audio/') || 
-                    file.name.toLowerCase().match(/\.(mp3|wav|ogg|m4a|flac|aac|wma)$/)) {
-                    audioFiles.push(file);
-                    debugLog(`Found audio: ${file.name}`, 'success');
-                }
-                
-                // Check if it's a VTT file
-                if (file.name.toLowerCase().endsWith('.vtt')) {
-                    vttFiles.push(file);
-                    debugLog(`Found lyrics: ${file.name}`, 'success');
-                }
-                
-                // Check if it's an analysis file
-                if (file.name.toLowerCase().endsWith('.txt')) {
-                    analysisFiles.push(file);
-                    debugLog(`Found analysis: ${file.name}`, 'success');
-                }
-            }
-        }
-        
-        if (audioFiles.length === 0) {
-            alert('No audio files found in this folder!\n\nSupported formats: MP3, WAV, OGG, M4A, FLAC, AAC, WMA');
-            playlistStatus.textContent = 'No audio files found';
-            return;
-        }
-        
-        debugLog(`Found ${audioFiles.length} audio files, ${vttFiles.length} VTT files, and ${analysisFiles.length} analysis files`, 'success');
-        
-        // IMPORTANT: Stop current playback before reloading
-        player.pause();
-        player.src = '';
-        currentTrackIndex = -1;
-        
-        // Use the existing handleFileLoad logic
-        const fakeEvent = {
-            target: {
-                files: [...audioFiles, ...vttFiles, ...analysisFiles]
-            }
-        };
-        
-        await handleFileLoad(fakeEvent);
-        
+        await fileLoadingManager.loadFromFolderHandle(folderHandle);
         debugLog('Folder loaded successfully!', 'success');
-        
     } catch (err) {
         debugLog(`Error loading folder: ${err.message}`, 'error');
         alert(`Failed to load folder: ${err.message}\n\nTry selecting the folder again.`);
         playlistStatus.textContent = 'Failed to load folder';
     }
-    
-    updateSmartPlaylistButton();
 }
         
         // Initial setup
@@ -3239,7 +2963,8 @@ function openMetadataEditorForTrack(index) {
         };
         
         // Re-render playlist to show changes
-        renderPlaylist();
+        playlistRenderer.setPlaylist(playlist, currentTrackIndex);
+playlistRenderer.render();
         
         // If this is the currently playing track, update display
         if (trackIndex === currentTrackIndex) {
@@ -3542,7 +3267,8 @@ if (loadSmartPlaylistBtn) {
         currentTrackIndex = 0;
         
         // Re-render playlist display
-        renderPlaylist();
+        playlistRenderer.setPlaylist(playlist, currentTrackIndex);
+playlistRenderer.render();
         updatePlaylistStatus();
         
         // Load first track (visualizer will auto-enhance if analysis exists)
@@ -3602,7 +3328,8 @@ async function startBackgroundAnalysis() {
             }
             
             // Update playlist display to show mood colors
-            renderPlaylist();
+            playlistRenderer.setPlaylist(playlist, currentTrackIndex);
+playlistRenderer.render();
             
             // Save every 5 tracks
             if (analyzedCount % 5 === 0) {

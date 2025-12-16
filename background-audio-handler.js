@@ -1,23 +1,18 @@
 /* ============================================
-   ENHANCED Background Audio Handler
-   Improved error handling, recovery, and features
+   FIXED Background Audio Handler
+   Non-invasive: Uses audio system from script.js
    ============================================ */
 
 class BackgroundAudioHandler {
     constructor() {
         this.player = null;
         this.wakeLock = null;
-        this.audioContext = null;
-        this.sourceNode = null;
-        this.gainNode = null;
-        this.isAudioContextSuspended = false;
         this.retryAttempts = 0;
         this.maxRetries = 3;
         this.metadataCache = new Map();
         this.lastPlaybackState = 'none';
-        this.interruptionHandler = null;
         
-        // Bind methods for event listeners
+        // Bind methods
         this.handleVisibilityChange = this.handleVisibilityChange.bind(this);
         this.handleBeforeUnload = this.handleBeforeUnload.bind(this);
         this.handleOnline = this.handleOnline.bind(this);
@@ -27,7 +22,7 @@ class BackgroundAudioHandler {
     }
     
     async init() {
-        console.log('🎵 Initializing ENHANCED Background Audio Handler...');
+        console.log('🎵 Initializing Background Audio Handler (passive mode)...');
         
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', () => this.setup());
@@ -45,8 +40,7 @@ class BackgroundAudioHandler {
         }
         
         try {
-            // Setup in optimal order
-            await this.setupAudioContext();
+            // Setup in optimal order (NO audio context creation)
             this.setupMediaSession();
             await this.registerServiceWorker();
             this.setupWakeLock();
@@ -55,47 +49,27 @@ class BackgroundAudioHandler {
             this.setupNetworkMonitoring();
             await this.requestPersistentStorage();
             
-            console.log('✅ Background Audio Handler fully initialized');
+            console.log('✅ Background Audio Handler initialized (passive mode)');
         } catch (error) {
             console.error('❌ Setup failed:', error);
-            this.handleSetupError(error);
         }
     }
     
-    async setupAudioContext() {
-        if (!window.AudioContext && !window.webkitAudioContext) {
-            console.warn('⚠️ Web Audio API not supported');
-            return;
-        }
-        
-        try {
-            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-            this.audioContext = new AudioContextClass();
-            
-            // Create audio graph for potential processing
-            this.sourceNode = this.audioContext.createMediaElementSource(this.player);
-            this.gainNode = this.audioContext.createGain();
-            
-            // Connect: source -> gain -> destination
-            this.sourceNode.connect(this.gainNode);
-            this.gainNode.connect(this.audioContext.destination);
-            
-            // Handle context state changes
-            this.audioContext.addEventListener('statechange', () => {
-                console.log(`🎚️ AudioContext state: ${this.audioContext.state}`);
-                this.isAudioContextSuspended = this.audioContext.state === 'suspended';
-            });
-            
-            console.log('✅ AudioContext initialized:', this.audioContext.state);
-        } catch (error) {
-            console.error('❌ AudioContext setup failed:', error);
-        }
+    // ============================================
+    // AUDIO CONTEXT ACCESS (script.js creates it)
+    // ============================================
+    
+    getAudioContext() {
+        // Access the audio context created by script.js
+        return window.audioContext || null;
     }
     
     async resumeAudioContext() {
-        if (this.audioContext && this.audioContext.state === 'suspended') {
+        const ctx = this.getAudioContext();
+        
+        if (ctx && ctx.state === 'suspended') {
             try {
-                await this.audioContext.resume();
+                await ctx.resume();
                 console.log('✅ AudioContext resumed');
                 return true;
             } catch (error) {
@@ -106,6 +80,10 @@ class BackgroundAudioHandler {
         return true;
     }
     
+    // ============================================
+    // MEDIA SESSION API
+    // ============================================
+    
     setupMediaSession() {
         if (!('mediaSession' in navigator)) {
             console.warn('⚠️ Media Session API not supported');
@@ -114,10 +92,8 @@ class BackgroundAudioHandler {
         
         console.log('🎮 Setting up Media Session API...');
         
-        // Set initial metadata
         this.updateMediaSessionMetadata();
         
-        // Setup all media control handlers with error handling
         const handlers = {
             play: () => this.handleMediaAction('play', () => this.player.play()),
             pause: () => this.handleMediaAction('pause', () => this.player.pause()),
@@ -156,7 +132,6 @@ class BackgroundAudioHandler {
             })
         };
         
-        // Register all handlers with error catching
         Object.entries(handlers).forEach(([action, handler]) => {
             try {
                 navigator.mediaSession.setActionHandler(action, handler);
@@ -172,13 +147,10 @@ class BackgroundAudioHandler {
         console.log(`📱 Media Session: ${actionName}`);
         
         try {
-            // Resume audio context if needed
             await this.resumeAudioContext();
             
-            // Execute the action
             const result = actionFn();
             
-            // Handle promises
             if (result && typeof result.catch === 'function') {
                 await result.catch(error => {
                     console.error(`❌ Media action '${actionName}' failed:`, error);
@@ -191,39 +163,144 @@ class BackgroundAudioHandler {
         }
     }
     
+    updateMediaSessionMetadata() {
+        if (!('mediaSession' in navigator)) return;
+        
+        if (typeof currentTrackIndex === 'undefined' || typeof playlist === 'undefined') {
+            this.setDefaultMetadata();
+            return;
+        }
+        
+        if (currentTrackIndex === -1 || !playlist[currentTrackIndex]) {
+            this.setDefaultMetadata();
+            return;
+        }
+        
+        const track = playlist[currentTrackIndex];
+        const cacheKey = track.fileName || track.url;
+        
+        if (this.metadataCache.has(cacheKey)) {
+            navigator.mediaSession.metadata = this.metadataCache.get(cacheKey);
+            console.log('🎵 Media Session metadata (cached)');
+            return;
+        }
+        
+        const metadata = track.metadata || {};
+        const artwork = [];
+        
+        if (metadata.image) {
+            artwork.push({ 
+                src: metadata.image, 
+                sizes: '512x512', 
+                type: 'image/jpeg' 
+            });
+            artwork.push({ 
+                src: metadata.image, 
+                sizes: '192x192', 
+                type: 'image/jpeg' 
+            });
+        } else {
+            // Use data URIs or skip if icons don't exist
+            artwork.push({ 
+                src: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect fill="%23dc3545" width="100" height="100"/><text x="50" y="50" font-size="50" text-anchor="middle" dy=".3em" fill="white">♪</text></svg>', 
+                sizes: '512x512', 
+                type: 'image/svg+xml' 
+            });
+        }
+        
+        const mediaMetadata = new MediaMetadata({
+            title: metadata.title || track.fileName || 'Unknown Track',
+            artist: metadata.artist || 'Unknown Artist',
+            album: metadata.album || 'Unknown Album',
+            artwork: artwork
+        });
+        
+        this.metadataCache.set(cacheKey, mediaMetadata);
+        navigator.mediaSession.metadata = mediaMetadata;
+        
+        console.log('🎵 Media Session metadata updated:', metadata.title || track.fileName);
+    }
+    
+    setDefaultMetadata() {
+        if (!('mediaSession' in navigator)) return;
+        
+        navigator.mediaSession.metadata = new MediaMetadata({
+            title: 'Music Player',
+            artist: 'Ready to play',
+            album: 'Ultimate Music Player',
+            artwork: [
+                { 
+                    src: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect fill="%23dc3545" width="100" height="100"/><text x="50" y="50" font-size="50" text-anchor="middle" dy=".3em" fill="white">♪</text></svg>', 
+                    sizes: '512x512', 
+                    type: 'image/svg+xml' 
+                }
+            ]
+        });
+    }
+    
+    handlePlaybackStateChange(state) {
+        this.lastPlaybackState = state;
+        
+        if ('mediaSession' in navigator) {
+            navigator.mediaSession.playbackState = state;
+        }
+        
+        console.log(`🎵 Playback state: ${state}`);
+    }
+    
+    updatePositionState() {
+        if (!('setPositionState' in navigator.mediaSession)) return;
+        if (!this.player || !this.player.duration || isNaN(this.player.duration)) return;
+        
+        try {
+            navigator.mediaSession.setPositionState({
+                duration: this.player.duration,
+                playbackRate: this.player.playbackRate,
+                position: Math.min(this.player.currentTime, this.player.duration)
+            });
+        } catch (error) {
+            // Silently ignore - can fail during transitions
+        }
+    }
+    
+    // ============================================
+    // SERVICE WORKER
+    // ============================================
+    
     async registerServiceWorker() {
         if (!('serviceWorker' in navigator)) {
             console.warn('⚠️ Service Worker not supported');
             return;
         }
         
-        // Skip if running as Chrome extension
         if (window.chromeosPlatform && window.chromeosPlatform.isExtension) {
-            console.log('⭐️ Skipping SW registration (extension mode)');
+            console.log('⭐ Skipping SW registration (extension mode)');
             return;
         }
         
         try {
             const registration = await navigator.serviceWorker.register('./service-worker.js', {
                 scope: './',
-                updateViaCache: 'none' // Always check for updates
+                updateViaCache: 'none'
             });
             
             console.log('✅ Service Worker registered:', registration.scope);
             
-            // Listen for updates
             registration.addEventListener('updatefound', () => {
                 console.log('🔄 Service Worker update found');
             });
             
             await navigator.serviceWorker.ready;
-            console.log('✅ Service Worker ready for background audio');
+            console.log('✅ Service Worker ready');
             
         } catch (error) {
             console.error('❌ Service Worker registration failed:', error);
-            // Don't throw - audio can work without SW
         }
     }
+    
+    // ============================================
+    // WAKE LOCK
+    // ============================================
     
     async setupWakeLock() {
         if (!('wakeLock' in navigator)) {
@@ -233,7 +310,6 @@ class BackgroundAudioHandler {
         
         const requestWakeLock = async () => {
             try {
-                // Release existing lock if any
                 if (this.wakeLock) {
                     await this.wakeLock.release();
                 }
@@ -261,17 +337,14 @@ class BackgroundAudioHandler {
             }
         };
         
-        // Request wake lock when playing
         this.player.addEventListener('play', () => {
             if (document.visibilityState === 'visible') {
                 requestWakeLock();
             }
         });
         
-        // Release wake lock when paused
         this.player.addEventListener('pause', releaseWakeLock);
         
-        // Re-acquire wake lock when page becomes visible
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'visible' && this.player && !this.player.paused) {
                 requestWakeLock();
@@ -281,14 +354,17 @@ class BackgroundAudioHandler {
         });
     }
     
+    // ============================================
+    // PLAYER EVENT LISTENERS
+    // ============================================
+    
     setupPlayerListeners() {
         if (!this.player) return;
         
-        // Playback state listeners
         this.player.addEventListener('play', () => {
             this.handlePlaybackStateChange('playing');
             this.updateMediaSessionMetadata();
-            this.retryAttempts = 0; // Reset retry counter on successful play
+            this.retryAttempts = 0;
         });
         
         this.player.addEventListener('pause', () => {
@@ -299,7 +375,6 @@ class BackgroundAudioHandler {
             this.handlePlaybackStateChange('none');
         });
         
-        // Error handling
         this.player.addEventListener('error', (e) => {
             console.error('❌ Player error:', e);
             this.handlePlaybackError(e);
@@ -317,7 +392,6 @@ class BackgroundAudioHandler {
             console.log('✅ Can play');
         });
         
-        // Metadata and position updates
         this.player.addEventListener('loadedmetadata', () => {
             this.updateMediaSessionMetadata();
             this.updatePositionState();
@@ -335,32 +409,15 @@ class BackgroundAudioHandler {
             this.updatePositionState();
         });
         
-        // Volume change
-        this.player.addEventListener('volumechange', () => {
-            if (this.gainNode) {
-                this.gainNode.gain.value = this.player.volume;
-            }
-        });
-        
-        // Page lifecycle events
         window.addEventListener('beforeunload', this.handleBeforeUnload);
         document.addEventListener('visibilitychange', this.handleVisibilityChange);
     }
     
+    // ============================================
+    // INTERRUPTION HANDLING
+    // ============================================
+    
     setupInterruptionHandling() {
-        // Handle audio interruptions (phone calls, other apps, etc)
-        if (this.audioContext) {
-            this.interruptionHandler = () => {
-                if (this.audioContext.state === 'interrupted') {
-                    console.warn('⚠️ Audio interrupted');
-                    // Audio will auto-resume on iOS when interruption ends
-                }
-            };
-            
-            this.audioContext.addEventListener('statechange', this.interruptionHandler);
-        }
-        
-        // Handle page freeze/resume
         document.addEventListener('freeze', () => {
             console.log('🥶 Page frozen');
         });
@@ -373,11 +430,14 @@ class BackgroundAudioHandler {
         });
     }
     
+    // ============================================
+    // NETWORK MONITORING
+    // ============================================
+    
     setupNetworkMonitoring() {
         window.addEventListener('online', this.handleOnline);
         window.addEventListener('offline', this.handleOffline);
         
-        // Check initial network status
         if (!navigator.onLine) {
             console.warn('⚠️ Starting offline');
         }
@@ -385,7 +445,6 @@ class BackgroundAudioHandler {
     
     handleOnline() {
         console.log('🌐 Network connection restored');
-        // Attempt to resume playback if it was interrupted
         if (this.player && this.player.paused && this.lastPlaybackState === 'playing') {
             console.log('🔄 Attempting to resume playback...');
             this.player.play().catch(error => {
@@ -396,112 +455,6 @@ class BackgroundAudioHandler {
     
     handleOffline() {
         console.warn('📡 Network connection lost');
-        // Audio may continue if cached, otherwise will error
-    }
-    
-    handlePlaybackStateChange(state) {
-        this.lastPlaybackState = state;
-        
-        if ('mediaSession' in navigator) {
-            navigator.mediaSession.playbackState = state;
-        }
-        
-        console.log(`🎵 Playback state: ${state}`);
-    }
-    
-    updatePositionState() {
-        if (!('setPositionState' in navigator.mediaSession)) return;
-        if (!this.player || !this.player.duration || isNaN(this.player.duration)) return;
-        
-        try {
-            navigator.mediaSession.setPositionState({
-                duration: this.player.duration,
-                playbackRate: this.player.playbackRate,
-                position: Math.min(this.player.currentTime, this.player.duration)
-            });
-        } catch (error) {
-            // Silently ignore - this can fail during track transitions
-        }
-    }
-    
-    updateMediaSessionMetadata() {
-        if (!('mediaSession' in navigator)) return;
-        
-        // Get current track info from global playlist
-        if (typeof currentTrackIndex === 'undefined' || typeof playlist === 'undefined') {
-            this.setDefaultMetadata();
-            return;
-        }
-        
-        if (currentTrackIndex === -1 || !playlist[currentTrackIndex]) {
-            this.setDefaultMetadata();
-            return;
-        }
-        
-        const track = playlist[currentTrackIndex];
-        const cacheKey = track.fileName || track.url;
-        
-        // Check cache first
-        if (this.metadataCache.has(cacheKey)) {
-            navigator.mediaSession.metadata = this.metadataCache.get(cacheKey);
-            console.log('🎵 Media Session metadata (cached)');
-            return;
-        }
-        
-        // Create new metadata
-        const metadata = track.metadata || {};
-        const artwork = [];
-        
-        if (metadata.image) {
-            artwork.push({ 
-                src: metadata.image, 
-                sizes: '512x512', 
-                type: 'image/jpeg' 
-            });
-            artwork.push({ 
-                src: metadata.image, 
-                sizes: '192x192', 
-                type: 'image/jpeg' 
-            });
-        } else {
-            artwork.push({ 
-                src: './icon-512.png', 
-                sizes: '512x512', 
-                type: 'image/png' 
-            });
-            artwork.push({ 
-                src: './icon-192.png', 
-                sizes: '192x192', 
-                type: 'image/png' 
-            });
-        }
-        
-        const mediaMetadata = new MediaMetadata({
-            title: metadata.title || track.fileName || 'Unknown Track',
-            artist: metadata.artist || 'Unknown Artist',
-            album: metadata.album || 'Unknown Album',
-            artwork: artwork
-        });
-        
-        // Cache and set
-        this.metadataCache.set(cacheKey, mediaMetadata);
-        navigator.mediaSession.metadata = mediaMetadata;
-        
-        console.log('🎵 Media Session metadata updated:', metadata.title || track.fileName);
-    }
-    
-    setDefaultMetadata() {
-        if (!('mediaSession' in navigator)) return;
-        
-        navigator.mediaSession.metadata = new MediaMetadata({
-            title: 'Music Player',
-            artist: 'Ready to play',
-            album: 'Ultimate Music Player',
-            artwork: [
-                { src: './icon-192.png', sizes: '192x192', type: 'image/png' },
-                { src: './icon-512.png', sizes: '512x512', type: 'image/png' }
-            ]
-        });
     }
     
     async handlePlaybackError(error) {
@@ -515,7 +468,6 @@ class BackgroundAudioHandler {
         this.retryAttempts++;
         console.log(`🔄 Retry attempt ${this.retryAttempts}/${this.maxRetries}`);
         
-        // Wait before retry with exponential backoff
         const delay = Math.min(1000 * Math.pow(2, this.retryAttempts - 1), 5000);
         await new Promise(resolve => setTimeout(resolve, delay));
         
@@ -531,20 +483,11 @@ class BackgroundAudioHandler {
         }
     }
     
-    handleSetupError(error) {
-        console.error('🚨 Setup error:', error);
-        // Could dispatch custom event for UI to handle
-        window.dispatchEvent(new CustomEvent('audiohandler:error', { 
-            detail: { error, message: 'Audio handler setup failed' }
-        }));
-    }
-    
     handleVisibilityChange() {
         if (document.hidden) {
-            console.log('📱 App hidden - audio should continue via Media Session');
+            console.log('📱 App hidden - audio continues via Media Session');
         } else {
             console.log('📱 App visible');
-            // Resume audio context if needed
             this.resumeAudioContext();
         }
     }
@@ -552,9 +495,12 @@ class BackgroundAudioHandler {
     handleBeforeUnload(e) {
         if (this.player && !this.player.paused) {
             console.log('⚠️ Page unloading while audio playing');
-            // Note: Can't prevent unload, just log for debugging
         }
     }
+    
+    // ============================================
+    // PERSISTENT STORAGE
+    // ============================================
     
     async requestPersistentStorage() {
         if (!navigator.storage || !navigator.storage.persist) {
@@ -567,7 +513,6 @@ class BackgroundAudioHandler {
             console.log(`💾 Persistent storage: ${isPersistent ? 'granted' : 'denied'}`);
             
             if (isPersistent) {
-                // Check usage
                 const estimate = await navigator.storage.estimate();
                 const usage = (estimate.usage / estimate.quota * 100).toFixed(2);
                 console.log(`💾 Storage usage: ${usage}% (${this.formatBytes(estimate.usage)} / ${this.formatBytes(estimate.quota)})`);
@@ -587,7 +532,10 @@ class BackgroundAudioHandler {
         return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
     }
     
-    // Public methods for external control
+    // ============================================
+    // PUBLIC METHODS
+    // ============================================
+    
     async forceResume() {
         console.log('🔄 Force resume requested');
         await this.resumeAudioContext();
@@ -602,8 +550,9 @@ class BackgroundAudioHandler {
     }
     
     getStatus() {
+        const ctx = this.getAudioContext();
         return {
-            audioContextState: this.audioContext?.state || 'unavailable',
+            audioContextState: ctx?.state || 'not created yet (script.js creates it)',
             mediaSessionSupported: 'mediaSession' in navigator,
             wakeLockActive: !!this.wakeLock,
             serviceWorkerReady: navigator.serviceWorker?.controller !== null,
@@ -613,44 +562,36 @@ class BackgroundAudioHandler {
         };
     }
     
-    // Cleanup method
     destroy() {
         console.log('🧹 Cleaning up Background Audio Handler...');
         
-        // Remove event listeners
         window.removeEventListener('beforeunload', this.handleBeforeUnload);
         document.removeEventListener('visibilitychange', this.handleVisibilityChange);
         window.removeEventListener('online', this.handleOnline);
         window.removeEventListener('offline', this.handleOffline);
         
-        // Release wake lock
         if (this.wakeLock) {
             this.wakeLock.release();
         }
         
-        // Close audio context
-        if (this.audioContext) {
-            this.audioContext.close();
-        }
-        
-        // Clear cache
         this.metadataCache.clear();
         
         console.log('✅ Cleanup complete');
     }
 }
 
-// Initialize immediately
+// Initialize
 const backgroundAudioHandler = new BackgroundAudioHandler();
 
 // Make globally available
 window.backgroundAudioHandler = backgroundAudioHandler;
 
-// Expose status check for debugging
+// Debug helper
 window.checkAudioStatus = () => {
     console.table(backgroundAudioHandler.getStatus());
     return backgroundAudioHandler.getStatus();
 };
 
-console.log('✅ ENHANCED background-audio-handler.js loaded');
-console.log('💡 Tip: Run window.checkAudioStatus() to see current status');
+console.log('✅ FIXED background-audio-handler.js loaded (passive mode)');
+console.log('💡 This handler does NOT create audio context - script.js does that');
+console.log('💡 Run window.checkAudioStatus() to see current status');
