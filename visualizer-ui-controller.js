@@ -52,30 +52,6 @@ class VisualizerUIController {
         this.debugLog('🎨 VisualizerUIController created', 'success');
     }
 
-// Also update the initFullscreenVisualizer method to accept these parameters:
-initFullscreenVisualizer(canvas, analyser, dataArray, bufferLength) {
-    this.fullscreenCanvas = canvas;
-    this.fullscreenCtx = canvas.getContext('2d');
-    
-    // Store audio data if provided
-    if (analyser) {
-        this.analyser = analyser;
-    }
-    if (dataArray && bufferLength) {
-        this.dataArray = dataArray;
-        this.bufferLength = bufferLength;
-    }
-    
-    console.log('✅ Fullscreen visualizer initialized with audio data');
-}
-
-        // ✅ FIXED: Simplified updateAudioData
-    updateAudioData() {
-        if (this.callbacks.getAudioData) {
-            this.audioData = this.callbacks.getAudioData();
-        }
-    }
-    
     // ============================================
     // INITIALIZATION
     // ============================================
@@ -244,11 +220,36 @@ enterFullscreen() {
     this.elements.canvas.width = window.innerWidth;
     this.elements.canvas.height = window.innerHeight;
     
-    // ✅ FIX: Get fresh audio data BEFORE initializing
-    this.updateAudioData();
+    // ✅ FIX: Get audio data SYNCHRONOUSLY from multiple sources
+    let audioData = null;
     
-    // ✅ FIX: Validate we got audio data
-    if (!this.audioData || !this.audioData.analyser || !this.audioData.dataArray) {
+    // Try callback first
+    if (this.callbacks.getAudioData) {
+        audioData = this.callbacks.getAudioData();
+    }
+    
+    // Fallback to global analyser
+    if (!audioData && window.sharedAnalyser && window.sharedDataArray) {
+        audioData = {
+            analyser: window.sharedAnalyser,
+            dataArray: window.sharedDataArray,
+            bufferLength: window.sharedBufferLength
+        };
+        console.log('✅ Using shared audio data');
+    }
+    
+    // Last resort: try to get from script.js globals
+    if (!audioData && window.analyser && window.dataArray) {
+        audioData = {
+            analyser: window.analyser,
+            dataArray: window.dataArray,
+            bufferLength: window.bufferLength
+        };
+        console.log('✅ Using global audio data');
+    }
+    
+    // Validate we got audio data
+    if (!audioData || !audioData.analyser || !audioData.dataArray) {
         console.error('❌ Failed to get audio data for fullscreen visualizer');
         alert('Cannot start visualizer: audio system not ready. Please play a track first.');
         this.exitFullscreen();
@@ -256,24 +257,22 @@ enterFullscreen() {
     }
     
     console.log('✅ Audio data validated:', {
-        hasAnalyser: !!this.audioData.analyser,
-        hasDataArray: !!this.audioData.dataArray,
-        bufferLength: this.audioData.bufferLength
+        hasAnalyser: !!audioData.analyser,
+        hasDataArray: !!audioData.dataArray,
+        bufferLength: audioData.bufferLength
     });
     
-    // ✅ FIX: Initialize WITH audio data
+    // ✅ FIX: Initialize WITH audio data directly
     this.manager.initFullscreenVisualizer(
         this.elements.canvas,
-        this.audioData.analyser,
-        this.audioData.dataArray,
-        this.audioData.bufferLength
+        audioData.analyser,
+        audioData.dataArray,
+        audioData.bufferLength
     );
     
-    // ✅ FIX: Force a small delay before starting animation
-    setTimeout(() => {
-        this.manager.startFullscreen();
-        console.log('✅ Fullscreen visualizer animation started');
-    }, 100);
+    // Start animation immediately
+    this.manager.startFullscreen();
+    console.log('✅ Fullscreen visualizer animation started');
     
     // Update track info
     this.updateTrackInfo();

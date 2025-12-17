@@ -381,15 +381,31 @@ renderAllItems() {
     this.playlistItems.innerHTML = '';
     this.playlistItems.appendChild(fragment);
     
-    // 🔥 CRITICAL FIX: Load images IMMEDIATELY, no lazy loading
-    // Lazy loading was causing images to never appear
+    // 🔥 FIX: Force immediate image loading
     requestAnimationFrame(() => {
-        const images = this.playlistItems.querySelectorAll('img[data-src]');
+        const images = this.playlistItems.querySelectorAll('img[data-src], .playlist-item-thumbnail img');
+        
         images.forEach(img => {
-            img.src = img.dataset.src;
-            img.removeAttribute('data-src');
+            const dataSrc = img.getAttribute('data-src');
+            const currentSrc = img.getAttribute('src');
+            
+            // Load from data-src if it exists
+            if (dataSrc && dataSrc !== currentSrc) {
+                img.src = dataSrc;
+                img.removeAttribute('data-src');
+                console.log('✅ Loaded image:', dataSrc.substring(0, 50));
+            }
+            // If src is already set but image hasn't loaded, force reload
+            else if (currentSrc && !img.complete) {
+                const temp = img.src;
+                img.src = '';
+                img.src = temp;
+            }
         });
-        console.log(`✅ Loaded ${images.length} album art images`);
+        
+        if (images.length > 0) {
+            console.log(`✅ Processed ${images.length} album art images`);
+        }
     });
 }
     
@@ -496,7 +512,8 @@ renderAllItems() {
 // Thumbnail
 let thumbnailHTML;
 if (track.metadata?.image) {
-    thumbnailHTML = `<img data-src="${track.metadata.image}" alt="Album art" style="width: 100%; height: 100%; object-fit: cover; border-radius: 5px;">`;
+    // 🔥 FIX: Use src directly instead of data-src
+    thumbnailHTML = `<img src="${track.metadata.image}" alt="Album art" style="width: 100%; height: 100%; object-fit: cover; border-radius: 5px;">`;
 } else {
     thumbnailHTML = `<span class="playlist-item-placeholder">🎵</span>`;
 }

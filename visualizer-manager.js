@@ -435,7 +435,7 @@ initFullscreenVisualizer(canvas, analyser, dataArray, bufferLength) {
  * Start fullscreen visualizer animation
  */
 startFullscreen() {
-    if (!this.fullscreenCanvas || this.animationId) {
+    if (!this.fullscreenCanvas || this.fullscreenAnimationId) {
         console.warn('⚠️ Cannot start fullscreen: canvas missing or already running');
         return;
     }
@@ -465,19 +465,19 @@ startFullscreen() {
     }
     
     start(shouldRun) {
-        if (!this.canvas || !shouldRun || this.animationId) return;
-        this.performance.lastFrame = performance.now();
+    if (!this.canvas || !shouldRun || this.mainAnimationId) return;
+    this.performance.lastFrame = performance.now();
         this.draw();
     }
     
     draw = () => {
-        if (!this.enabled) {
-            this.animationId = null;
-            this.clearCanvas();
-            return;
-        }
-        
-        this.animationId = requestAnimationFrame(this.draw);
+    if (!this.enabled) {
+        this.mainAnimationId = null;
+        this.clearCanvas();
+        return;
+    }
+    
+    this.mainAnimationId = requestAnimationFrame(this.draw);
         
         const now = performance.now();
         const deltaTime = now - this.performance.lastFrame;
@@ -567,12 +567,12 @@ startFullscreen() {
     }
     
     stop() {
-        if (this.animationId) {
-            cancelAnimationFrame(this.animationId);
-            this.animationId = null;
-            this.clearCanvas();
-        }
+    if (this.mainAnimationId) {
+        cancelAnimationFrame(this.mainAnimationId);
+        this.mainAnimationId = null;
+        this.clearCanvas();
     }
+}
     
     setEnabled(enabled) {
         this.enabled = enabled;
@@ -604,7 +604,7 @@ drawFullscreen = () => {
         return;
     }
     
-    this.animationId = requestAnimationFrame(this.drawFullscreen);
+this.fullscreenAnimationId = requestAnimationFrame(this.drawFullscreen);
     
     const now = performance.now();
     const deltaTime = now - this.performance.lastFrame;
@@ -909,11 +909,11 @@ drawFullscreen = () => {
         this.fullscreenCtx.fill();
     }
     
-    stopFullscreen() {
-        if (this.animationId) {
-            cancelAnimationFrame(this.animationId);
-            this.animationId = null;
-        }
+stopFullscreen() {
+    if (this.fullscreenAnimationId) {
+        cancelAnimationFrame(this.fullscreenAnimationId);
+        this.fullscreenAnimationId = null;
+    }
         this.isFullscreen = false;
         this.particlePool.active.forEach(p => this.recycleParticle(p));
     }
