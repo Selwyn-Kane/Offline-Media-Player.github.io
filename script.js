@@ -618,6 +618,23 @@ function setupAudioContext() {
                     console.error('❌ Failed to resume:', err);
                 });
             }
+
+            // Connect crossfade gain node into audio chain
+// Insert between treble filter and volume control
+if (crossfadeManager && !crossfadeManager.isInitialized) {
+    crossfadeManager.initAudioNodes();
+    
+    // Reconnect audio chain with crossfade
+    if (window.volumeGainNode) {
+        // treble → crossfade → volume → compressor → makeup → analyser → output
+        trebleFilter.disconnect();
+        crossfadeManager.connectToAudioChain(trebleFilter, window.volumeGainNode);
+    } else {
+        // treble → crossfade → analyser → output
+        trebleFilter.disconnect();
+        crossfadeManager.connectToAudioChain(trebleFilter, analyser);
+    }
+}
             
             analyser = audioContext.createAnalyser();
             analyser.fftSize = APP_CONFIG.FFT_SIZE;
@@ -1139,24 +1156,71 @@ player.play().then(() => {
 
     updateMediaSession();
     playlistRenderer.updateJumpButton();
-
-          // Preload next track for crossfade
+// Start crossfade monitoring AFTER metadata loads
 if (crossfadeManager && crossfadeManager.enabled && currentTrackIndex + 1 < playlist.length) {
-    crossfadeManager.preloadNext(playlist[currentTrackIndex + 1]);
+    const nextTrack = playlist[currentTrackIndex + 1];
+    
+    // ✅ FIX: Wait for duration to be available
+    const startCrossfadeMonitoring = () => {
+        if (!player.duration || isNaN(player.duration)) {
+            debugLog('⏳ Waiting for track duration before starting crossfade...', 'info');
+            return;
+        }
+        
+        crossfadeManager.startMonitoring(player, track, nextTrack, async (fadeData) => {
+            debugLog('🎚️ Crossfade triggered - switching tracks', 'info');
+            await playNext();
+            
+            if (fadeData.startTime && fadeData.startTime > 0) {
+                await new Promise((resolve) => {
+                    if (player.readyState >= 2) {
+                        resolve();
+                    } else {
+                        player.addEventListener('loadedmetadata', resolve, { once: true });
+                    }
+                });
+                
+                player.currentTime = fadeData.startTime;
+                debugLog(`⏭️ Skipped intro: jumped to ${fadeData.startTime.toFixed(1)}s`, 'success');
+            }
+        });
+    };
+    
+    // Start monitoring once duration is available
+    if (player.duration && !isNaN(player.duration)) {
+        startCrossfadeMonitoring();
+    } else {
+        player.addEventListener('loadedmetadata', startCrossfadeMonitoring, { once: true });
+        player.addEventListener('durationchange', startCrossfadeMonitoring, { once: true });
+    }
 }
 if (visualizerController) {
         visualizerController.onTrackChange();
     }
+// ✅ Return a promise that resolves when track is loaded
+    return new Promise((resolve) => {
+        if (player.readyState >= 2) {
+            resolve();
+        } else {
+            player.addEventListener('loadedmetadata', () => resolve(), { once: true });
+        }
+    });      
 }
 
 
 async function playNext() {
+    // Cancel any pending crossfade
+    if (crossfadeManager) {
+        crossfadeManager.cancelFade();
+    }
+    
     // ✅ ADD: Remember volume for current track before switching
     if (currentTrackIndex !== -1 && volumeControl) {
         const track = playlist[currentTrackIndex];
         const trackId = `${track.metadata?.artist || 'Unknown'}_${track.metadata?.title || track.fileName}`;
         volumeControl.rememberTrackVolume(trackId, volumeControl.getVolume());
     }
+    
     if (currentTrackIndex === -1 || playlist.length === 0) return;
 
     let nextIndex;
@@ -1172,25 +1236,9 @@ async function playNext() {
         return;
     }
     
-// ✅ NEW: Crossfade logic
-if (crossfadeManager && crossfadeManager.enabled) {
-    const currentTrack = playlist[currentTrackIndex];
-    const nextTrack = playlist[nextIndex];
-    
-    const result = await crossfadeManager.startCrossfade(currentTrack, nextTrack);
-    
-    // Load next track
-    currentTrackIndex = nextIndex;
+    // ✅ SIMPLE: Just load the next track normally
+    // Crossfade will be handled automatically by the monitoring system in loadTrack
     loadTrack(nextIndex);
-    
-    // Apply intelligent start point if available
-    if (result && result.startPoint) {
-        player.currentTime = result.startPoint;
-    }
-} else {
-    // Normal track loading (no crossfade)
-    loadTrack(nextIndex);
-}
 }
 
         function playPrevious() {
@@ -1624,6 +1672,10 @@ player.addEventListener('pause', () => {
     updateMediaSession();
      if (visualizerController) {
         visualizerController.onPlayStateChange();
+    }
+        // Cancel crossfade when pausing
+    if (crossfadeManager) {
+        crossfadeManager.cancelFade();
     }
 });
 
