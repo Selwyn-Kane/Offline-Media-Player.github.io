@@ -122,6 +122,22 @@ class VisualizerManager {
             this.particlePool.inactive.push(this.createParticle());
         }
     }
+
+    /**
+ * Initialize main embedded visualizer
+ */
+initMainVisualizer(canvas, analyser, dataArray, bufferLength) {
+    this.canvas = canvas;
+    this.canvasCtx = canvas.getContext('2d');
+    this.analyser = analyser;
+    this.dataArray = dataArray;
+    this.bufferLength = bufferLength;
+    
+    // Resize to fit container
+    this.resizeCanvas();
+    
+    console.log('✅ Main visualizer initialized');
+}
     
     createParticle() {
         return {
@@ -389,21 +405,46 @@ class VisualizerManager {
     // MAIN VISUALIZER (EMBEDDED)
     // ============================================
     
-    initMainVisualizer(canvasElement, analyser) {
-        if (this.canvas === canvasElement) return;
-        
-        this.canvas = canvasElement;
-        this.canvasCtx = this.canvas.getContext('2d', { 
-            alpha: false,
-            desynchronized: true
-        });
+// Method 2: Initialize fullscreen with audio data
+initFullscreenVisualizer(canvas, analyser, dataArray, bufferLength) {
+    this.fullscreenCanvas = canvas;
+    this.fullscreenCtx = canvas.getContext('2d');
+    
+    // Store audio data
+    if (analyser) {
         this.analyser = analyser;
+    }
+    
+    // ✅ CRITICAL FIX: Always create a NEW Uint8Array for fullscreen
+    if (analyser) {
         this.bufferLength = analyser.frequencyBinCount;
         this.dataArray = new Uint8Array(this.bufferLength);
-        
-        this.resizeCanvas();
-        console.log('✅ Main visualizer initialized');
+        console.log('✅ Fullscreen visualizer initialized with NEW dataArray');
+    } else if (dataArray && bufferLength) {
+        // Fallback: use provided data
+        this.dataArray = dataArray;
+        this.bufferLength = bufferLength;
+        console.log('✅ Fullscreen visualizer initialized with provided dataArray');
     }
+    
+    console.log('✅ Fullscreen visualizer initialized with audio data');
+}
+
+    startFullscreen() {
+    if (!this.fullscreenCanvas || this.animationId) return;
+    
+    this.isFullscreen = true;
+    this.performance.lastFrame = performance.now();
+    
+    // Ensure we have audio data
+    if (!this.analyser || !this.dataArray) {
+        console.error('❌ Cannot start fullscreen: missing audio data');
+        return;
+    }
+    
+    console.log('✅ Starting fullscreen visualizer');
+    this.drawFullscreen();
+}
     
     resizeCanvas() {
         if (!this.canvas) return;
@@ -530,17 +571,6 @@ class VisualizerManager {
     // FULLSCREEN VISUALIZER
     // ============================================
     
-    initFullscreenVisualizer(canvasElement) {
-        if (this.fullscreenCanvas === canvasElement) return;
-        
-        this.fullscreenCanvas = canvasElement;
-        this.fullscreenCtx = this.fullscreenCanvas.getContext('2d', { 
-            alpha: false,
-            desynchronized: true
-        });
-        this.resizeFullscreenCanvas();
-        console.log('✅ Fullscreen visualizer initialized');
-    }
     
     resizeFullscreenCanvas() {
         if (!this.fullscreenCanvas) return;
@@ -548,60 +578,55 @@ class VisualizerManager {
         this.fullscreenCanvas.height = window.innerHeight;
     }
     
-    startFullscreen(analyser, dataArray) {
-        if (!this.analyser) {
-            this.analyser = analyser;
-            this.bufferLength = analyser.frequencyBinCount;
-            this.dataArray = new Uint8Array(this.bufferLength);
-        } else {
-            this.dataArray = dataArray;
-        }
-        
-        this.isFullscreen = true;
-        this.performance.lastFrame = performance.now();
-        this.drawFullscreen();
+drawFullscreen = () => {
+    // ✅ ADD THIS VALIDATION AT THE START
+    if (!this.analyser || !this.dataArray) {
+        console.error('❌ Missing audio data, stopping fullscreen visualizer');
+        this.stopFullscreen();
+        return;
     }
     
-    drawFullscreen = () => {
-        if (!this.fullscreenCanvas || !this.analyser) {
-            this.animationId = null;
-            return;
-        }
-        
-        this.animationId = requestAnimationFrame(this.drawFullscreen);
-        
-        const now = performance.now();
-        const deltaTime = now - this.performance.lastFrame;
-        this.performance.lastFrame = now;
-        
-        try {
-            this.analyser.getByteFrequencyData(this.dataArray);
-            this.updateSmoothing(this.dataArray, deltaTime);
-            const isBeat = this.detectBeat(this.dataArray);
-            
-            // Clear with trailing effect
-            this.fullscreenCtx.fillStyle = 'rgba(0, 0, 0, 0.15)';
-            this.fullscreenCtx.fillRect(0, 0, this.fullscreenCanvas.width, this.fullscreenCanvas.height);
-            
-            // Draw based on mode
-            switch(this.vizMode) {
-                case 'bars':
-                    this.drawFullscreenBars(isBeat);
-                    break;
-                case 'circular':
-                    this.drawFullscreenCircular(isBeat);
-                    break;
-                case 'waveform':
-                    this.drawFullscreenWaveform(isBeat);
-                    break;
-                case 'particles':
-                    this.drawFullscreenParticles(isBeat);
-                    break;
-            }
-        } catch (error) {
-            console.error('❌ Fullscreen draw error:', error);
-        }
+    if (!this.fullscreenCanvas || !this.analyser) {
+        this.animationId = null;
+        return;
     }
+    
+    this.animationId = requestAnimationFrame(this.drawFullscreen);
+    
+    const now = performance.now();
+    const deltaTime = now - this.performance.lastFrame;
+    this.performance.lastFrame = now;
+    
+    try {
+        this.analyser.getByteFrequencyData(this.dataArray);  // Should work now!
+        this.updateSmoothing(this.dataArray, deltaTime);
+        const isBeat = this.detectBeat(this.dataArray);
+        
+        // Clear with trailing effect
+        this.fullscreenCtx.fillStyle = 'rgba(0, 0, 0, 0.15)';
+        this.fullscreenCtx.fillRect(0, 0, this.fullscreenCanvas.width, this.fullscreenCanvas.height);
+        
+        // Draw based on mode
+        switch(this.vizMode) {
+            case 'bars':
+                this.drawFullscreenBars(isBeat);
+                break;
+            case 'circular':
+                this.drawFullscreenCircular(isBeat);
+                break;
+            case 'waveform':
+                this.drawFullscreenWaveform(isBeat);
+                break;
+            case 'particles':
+                this.drawFullscreenParticles(isBeat);
+                break;
+        }
+    } catch (error) {
+        console.error('❌ Fullscreen draw error:', error);
+        // ✅ ADD: Stop on repeated errors
+        this.stopFullscreen();
+    }
+}
     
     drawFullscreenBars(isBeat) {
         const width = this.fullscreenCanvas.width;

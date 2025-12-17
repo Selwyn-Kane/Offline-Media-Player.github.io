@@ -88,11 +88,6 @@ folderPersistence.getStats().then(stats => {
     metadataEditor = new MetadataEditor(debugLog);
     analysisParser = new AnalysisTextParser(debugLog);
 
-      // ✅ ADD THESE TWO LINES HERE:
-    analyzer = new MusicAnalyzer(debugLog);
-generator = new SmartPlaylistGenerator(analyzer, debugLog);
-    debugLog('✅ Smart playlist system initialized', 'success');
-
     
         // --- Core Variables ---
         const player = document.getElementById('audio-player');
@@ -180,7 +175,7 @@ if (typeof CustomBackgroundManager !== 'undefined') {
 }
 
      // ✅ ADD THIS - Initialize playlist renderer
-    const playlistRenderer = new PlaylistRenderer(debugLog);
+    const playlistRenderer = new EnhancedPlaylistRenderer(debugLog);
     playlistRenderer.init({
         playlistItems: document.getElementById('playlist-items'),
         playlistSearch: document.getElementById('playlist-search'),
@@ -189,10 +184,58 @@ if (typeof CustomBackgroundManager !== 'undefined') {
     });
     
     // Set callbacks
-    playlistRenderer.setCallbacks({
-        onTrackClick: (index) => loadTrack(index),
-        onEditClick: (index) => openMetadataEditorForTrack(index)
-    });
+playlistRenderer.setCallbacks({
+    onTrackClick: (index) => loadTrack(index),
+    onEditClick: (index) => openMetadataEditorForTrack(index),
+    onReorder: (fromIndex, toIndex) => {
+        // Handle drag-and-drop reordering
+        const track = playlist.splice(fromIndex, 1)[0];
+        const insertIndex = toIndex > fromIndex ? toIndex - 1 : toIndex;
+        playlist.splice(insertIndex, 0, track);
+        
+        // Update current track index
+        if (currentTrackIndex === fromIndex) {
+            currentTrackIndex = insertIndex;
+        } else if (fromIndex < currentTrackIndex && insertIndex >= currentTrackIndex) {
+            currentTrackIndex--;
+        } else if (fromIndex > currentTrackIndex && insertIndex <= currentTrackIndex) {
+            currentTrackIndex++;
+        }
+        
+        playlistRenderer.setPlaylist(playlist, currentTrackIndex);
+        playlistRenderer.render();
+        savePlaylistToStorage();
+        debugLog(`Track moved from ${fromIndex + 1} to ${insertIndex + 1}`, 'success');
+    },
+    onBatchDelete: (indices) => {
+        // Handle batch deletion
+        const sortedIndices = [...indices].sort((a, b) => b - a);
+        sortedIndices.forEach(index => {
+            const track = playlist[index];
+            if (track.audioURL && track.audioURL.startsWith('blob:')) {
+                URL.revokeObjectURL(track.audioURL);
+            }
+            playlist.splice(index, 1);
+        });
+        
+        // Adjust current track index
+        if (indices.includes(currentTrackIndex)) {
+            player.pause();
+            player.src = '';
+            currentTrackIndex = -1;
+            clearMetadata();
+        } else {
+            const deletedBeforeCurrent = indices.filter(i => i < currentTrackIndex).length;
+            currentTrackIndex -= deletedBeforeCurrent;
+        }
+        
+        playlistRenderer.setPlaylist(playlist, currentTrackIndex);
+        playlistRenderer.render();
+        updatePlaylistStatus();
+        savePlaylistToStorage();
+        debugLog(`${indices.length} tracks removed`, 'success');
+    }
+});
     
     debugLog('✅ Playlist renderer ready', 'success');
         
@@ -327,6 +370,96 @@ lyricsManager.onNavigationRequest = (direction) => {
 };
 
 debugLog('✅ Enhanced Lyrics Manager initialized', 'success');
+
+    // ========== VISUALIZER UI CONTROLLER ==========
+let visualizerController = null;
+
+if (typeof VisualizerUIController !== 'undefined') {
+    visualizerController = new VisualizerUIController(visualizerManager, debugLog);
+    
+    visualizerController.init({
+        toggle: 'fullscreen-viz-toggle',
+        container: 'fullscreen-visualizer',
+        canvas: 'fullscreen-viz-canvas',
+        modeBtn: 'viz-mode-btn',
+        prevBtn: 'viz-prev-btn',
+        playPauseBtn: 'viz-play-pause-btn',
+        nextBtn: 'viz-next-btn',
+        closeBtn: 'viz-close-btn',
+        title: '.fullscreen-viz-title',
+        artist: '.fullscreen-viz-artist',
+        currentTime: 'viz-current-time',
+        duration: 'viz-duration'
+    });
+    
+    // Set callbacks
+    visualizerController.setCallbacks({
+        onPrevious: () => {
+            if (!prevButton.disabled) playPrevious();
+        },
+        onNext: () => {
+            if (!nextButton.disabled) playNext();
+        },
+        onPlayPause: () => {
+            if (player.paused) player.play();
+            else player.pause();
+        },
+        getTrackInfo: () => {
+            if (currentTrackIndex === -1 || playlist.length === 0) {
+                return { title: 'No track loaded', artist: '--' };
+            }
+            const track = playlist[currentTrackIndex];
+            return {
+                title: track.metadata?.title || track.fileName,
+                artist: track.metadata?.artist || 'Unknown Artist'
+            };
+        },
+        getCurrentTime: () => player.currentTime || 0,
+        getDuration: () => player.duration || 0,
+        isPaused: () => player.paused,
+        // ✅ ADD THIS CRITICAL CALLBACK:
+getAudioData: () => {
+    // Try multiple ways to get audio data
+    if (analyser && dataArray) {
+        analyser.getByteFrequencyData(dataArray);
+        return {
+            dataArray: dataArray,
+            bufferLength: bufferLength,
+            analyser: analyser
+        };
+    } else if (window.sharedAnalyser && window.sharedDataArray) {
+        window.sharedAnalyser.getByteFrequencyData(window.sharedDataArray);
+        return {
+            dataArray: window.sharedDataArray,
+            bufferLength: window.sharedBufferLength,
+            analyser: window.sharedAnalyser
+        };
+    } else if (window.getAudioDataForVisualizer) {
+        // Use the global fallback function
+        return window.getAudioDataForVisualizer();
+    } else if (analyser) {
+        // Last resort: create everything from scratch
+        bufferLength = analyser.frequencyBinCount || 256;
+        dataArray = new Uint8Array(bufferLength);
+        if (analyser.getByteFrequencyData) {
+            analyser.getByteFrequencyData(dataArray);
+        }
+        debugLog('⚠️ Created emergency dataArray for visualizer', 'warning');
+        return {
+            dataArray: dataArray,
+            bufferLength: bufferLength,
+            analyser: analyser
+        };
+    }
+    
+    debugLog('❌ No audio analyser available for visualizer', 'error');
+    return null;
+}
+    });
+    
+    debugLog('✅ Visualizer UI controller integrated', 'success');
+}
+// ========== END VISUALIZER UI CONTROLLER ==========
         
         function applyDynamicBackground(color) {
             if (!color) {
@@ -386,12 +519,24 @@ debugLog('✅ Enhanced Lyrics Manager initialized', 'success');
         }
         
         // --- Audio Visualizer Functions ---
+/* ============================================
+   FIX: setupAudioContext in script.js
+   Prevent multiple audio source creation
+   ============================================ */
+
 function setupAudioContext() {
     console.log('setupAudioContext called, audioContext exists?', !!audioContext);
     
-    // ✅ CRITICAL: If audioContext exists, we're already set up - just ensure managers exist
+    // ✅ FIX: Always create dataArray if analyser exists
+    if (analyser && !dataArray) {
+        bufferLength = analyser.frequencyBinCount;
+        dataArray = new Uint8Array(bufferLength);
+        console.log('✅ Created dataArray for analyser');
+    }
+    
+    // ✅ CRITICAL: If audioContext exists, we're already set up
     if (audioContext) {
-        console.log('Audio context already exists - ensuring managers are initialized');
+        console.log('✅ Audio context already exists - skipping recreation');
         
         // Create managers if they don't exist
         if (!audioPresetsManager && bassFilter && midFilter && trebleFilter) {
@@ -411,13 +556,19 @@ function setupAudioContext() {
             debugLog('✅ Crossfade system initialized (late)', 'success');
         }
         
-        // ALWAYS return - never recreate audio context
+        // ✅ NEW: Initialize visualizer if it hasn't been initialized yet
+        if (visualizerManager && !visualizerManager.canvas && canvas && analyser && dataArray) {
+            visualizerManager.initMainVisualizer(canvas, analyser, dataArray, bufferLength);
+            debugLog('✅ Audio visualizer initialized (late)', 'success');
+        }
+        
+        // ✅ ALWAYS return - never recreate audio context or source
         return;
     }
     
     try {
-        // ✅ FIX: Check if background-audio-handler already created everything
-        if (window.sharedAudioContext && window.sharedAnalyser) {
+        // ✅ Check if background-audio-handler already created everything
+        if (window.sharedAudioContext && window.sharedAnalyser && window.sharedAudioSource) {
             debugLog('✅ Using audio system from background-audio-handler', 'success');
             audioContext = window.sharedAudioContext;
             analyser = window.sharedAnalyser;
@@ -430,131 +581,121 @@ function setupAudioContext() {
             dataArray = new Uint8Array(bufferLength);
             
         } else {
-    // Create our own audio context
-    audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    analyser = audioContext.createAnalyser();
-    analyser.fftSize = APP_CONFIG.FFT_SIZE;
-    bufferLength = analyser.frequencyBinCount;
-    dataArray = new Uint8Array(bufferLength);
-    
-    // Create equalizer filters
-    bassFilter = audioContext.createBiquadFilter();
-    bassFilter.type = 'lowshelf';
-    bassFilter.frequency.value = APP_CONFIG.BASS_FREQ_HZ;
-    bassFilter.gain.value = 0;
-    
-    midFilter = audioContext.createBiquadFilter();
-    midFilter.type = 'peaking';
-    midFilter.frequency.value = APP_CONFIG.MID_FREQ_HZ;
-    midFilter.Q.value = 1;
-    midFilter.gain.value = 0;
-    
-    trebleFilter = audioContext.createBiquadFilter();
-    trebleFilter.type = 'highshelf';
-    trebleFilter.frequency.value = APP_CONFIG.TREBLE_FREQ_HZ;
-    trebleFilter.gain.value = 0;
-    
-    // ✅ FIX: Check if background-audio-handler already created the source
-    try {
-        // Try to get existing source from background handler
-        if (window.sharedAudioSource) {
-            debugLog('✅ Reusing audio source from background handler', 'success');
-            audioSource = window.sharedAudioSource;
+            // Create our own audio context (first time only)
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            analyser = audioContext.createAnalyser();
+            analyser.fftSize = APP_CONFIG.FFT_SIZE;
+            bufferLength = analyser.frequencyBinCount;
+            dataArray = new Uint8Array(bufferLength);
             
-            // Disconnect from its current destination
-            try {
-                audioSource.disconnect();
-            } catch (e) {
-                // Already disconnected, that's fine
+            // Create equalizer filters
+            bassFilter = audioContext.createBiquadFilter();
+            bassFilter.type = 'lowshelf';
+            bassFilter.frequency.value = APP_CONFIG.BASS_FREQ_HZ;
+            bassFilter.gain.value = 0;
+            
+            midFilter = audioContext.createBiquadFilter();
+            midFilter.type = 'peaking';
+            midFilter.frequency.value = APP_CONFIG.MID_FREQ_HZ;
+            midFilter.Q.value = 1;
+            midFilter.gain.value = 0;
+            
+            trebleFilter = audioContext.createBiquadFilter();
+            trebleFilter.type = 'highshelf';
+            trebleFilter.frequency.value = APP_CONFIG.TREBLE_FREQ_HZ;
+            trebleFilter.gain.value = 0;
+            
+            // ✅ CRITICAL: Only create source if it doesn't exist globally
+            if (!window.sharedAudioSource) {
+                try {
+                    audioSource = audioContext.createMediaElementSource(player);
+                    window.sharedAudioSource = audioSource;
+                    console.log('✅ Created NEW audio source (first time)');
+                } catch (error) {
+                    // Source already exists - reuse it
+                    console.warn('⚠️ Audio source already exists, reusing:', error.message);
+                    audioSource = window.sharedAudioSource;
+                }
+            } else {
+                audioSource = window.sharedAudioSource;
+                console.log('✅ Reusing existing audio source');
             }
-        } else {
-            // Create new source (first time setup)
-            audioSource = audioContext.createMediaElementSource(player);
-            debugLog('✅ Created new audio source', 'success');
+            
+            // Connect the chain ONLY if not already connected
+            if (!window.audioChainConnected) {
+                audioSource.connect(bassFilter);
+                bassFilter.connect(midFilter);
+                midFilter.connect(trebleFilter);
+                trebleFilter.connect(analyser);
+                analyser.connect(audioContext.destination);
+                window.audioChainConnected = true;
+                console.log('✅ Audio chain connected');
+            }
         }
         
-        // Connect the full chain
-        audioSource.connect(bassFilter);
-        bassFilter.connect(midFilter);
-        midFilter.connect(trebleFilter);
-        trebleFilter.connect(analyser);
-        analyser.connect(audioContext.destination);
-        
-        debugLog('✅ Audio chain connected successfully', 'success');
-    } catch (err) {
-        debugLog('❌ Failed to connect audio: ' + err.message, 'error');
-        
-        // ✅ CRITICAL: Don't return - try to salvage what we can
-        // If source creation failed, we can still use the analyser for visualization
-        debugLog('⚠️ Continuing with limited audio support', 'warning');
-    }
-}
-        
-        // Pass to lyrics manager
-        if (lyricsManager && typeof lyricsManager.setAudioContext === 'function') {
-            lyricsManager.setAudioContext(analyser, dataArray, bufferLength);
-        }
+        // Share globally
+        window.sharedAudioContext = audioContext;
+        window.sharedAnalyser = analyser;
+        window.sharedDataArray = dataArray; 
+        window.sharedBufferLength = bufferLength;
+        window.sharedBassFilter = bassFilter;
+        window.sharedMidFilter = midFilter;
+        window.sharedTrebleFilter = trebleFilter;
         
         // Initialize visualizer
-        if (analyser && canvas) {
-            visualizerManager.initMainVisualizer(canvas, analyser);
+        if (analyser && canvas && dataArray) {
+            visualizerManager.initMainVisualizer(canvas, analyser, dataArray, bufferLength);
             debugLog('Audio visualizer initialized', 'success');
         }
-
-        // Apply performance-optimized settings
+        
+        // Apply performance settings
         const vizSettings = perfManager.getVisualizerSettings();
         analyser.fftSize = vizSettings.fftSize;
-        debugLog(`🎨 Visualizer optimized: FFT=${vizSettings.fftSize}, Effects=${vizSettings.effects}`, 'info');
         
-        // Initialize volume control
-        if (volumeControl && audioContext && audioSource) {
-            volumeControl.initAudioNodes(audioContext, audioSource, audioContext.destination);
-        }
-        
+        // Initialize other components
         setupEqualizerControls();
-
-        // Initialize presets manager
+        
         audioPresetsManager = new AudioPresetsManager(bassFilter, midFilter, trebleFilter, debugLog);
         audioPresetsManager.loadSavedPreset();
-        debugLog('✅ Audio presets manager initialized', 'success');
-
-        // Initialize Auto-EQ
+        
         if (!autoEQManager) {
             autoEQManager = new AutoEQManager(audioPresetsManager, debugLog);
-            debugLog('✅ Auto-EQ system initialized', 'success');
         }
-
-        // Populate preset dropdown
+        
         populatePresetDropdown();
-
-        // Initialize crossfade
+        
         if (!crossfadeManager) {
             crossfadeManager = new CrossfadeManager(audioContext, debugLog);
-            debugLog('✅ Crossfade system initialized', 'success');
-        }
-
-        // Link Auto-EQ with presets
-        if (autoEQManager && !autoEQManager.presetsManager) {
-            autoEQManager.presetsManager = audioPresetsManager;
-            debugLog('✅ Auto-EQ system linked', 'success');
-        }
-
-        // Initialize crossfade audio chain
-        if (crossfadeManager && !crossfadeManager.currentPlayer) {
-            crossfadeManager.init(player, audioSource, audioContext.destination);
         }
         
     } catch (error) {
         debugLog(`Audio setup failed: ${error.message}`, 'error');
+        
+        // Still try to create dataArray
+        if (analyser && !dataArray) {
+            try {
+                bufferLength = analyser.frequencyBinCount || 256;
+                dataArray = new Uint8Array(bufferLength);
+            } catch (e) {
+                debugLog('❌ Could not create fallback dataArray', 'error');
+            }
+        }
     }
 }
         
 function startVisualizer() {
     // 🆕 CHECK IF VISUALIZER SHOULD RUN
     if (perfManager.shouldRunVisualizer() && analyser) {
+        // Ensure visualizer has dataArray
+        if (!dataArray) {
+            bufferLength = analyser.frequencyBinCount;
+            dataArray = new Uint8Array(bufferLength);
+            debugLog('✅ Created missing dataArray for visualizer', 'info');
+        }
+        
         // Ensure visualizer is initialized before starting
         if (!visualizerManager.canvas) {
-            visualizerManager.initMainVisualizer(canvas, analyser);
+            visualizerManager.initMainVisualizer(canvas, analyser, dataArray, bufferLength);
         }
         
         // 🆕 APPLY PERFORMANCE SETTINGS
@@ -794,6 +935,14 @@ if (jumpToCurrentBtn) {
             playlistStatus.textContent = `Tracks: ${playlist.length} | ${loopText} | ${shuffleText}`;
         }
 
+    function updateMediaSession() {
+    // This function is handled by background-audio-handler
+    // Just call its method if available
+    if (window.backgroundAudioHandler && typeof window.backgroundAudioHandler.updateMediaSessionMetadata === 'function') {
+        window.backgroundAudioHandler.updateMediaSessionMetadata(true);
+    }
+}
+
       async function loadTrack(index) {
     if (index < 0 || index >= playlist.length) return;
     currentTrackIndex = index;
@@ -833,14 +982,21 @@ if (jumpToCurrentBtn) {
         autoEQManager.applyAutoEQ(track);
     }
 
-     // ✅ NEW: Pass analysis data to visualizer if available
-    if (track.analysis) {
-        visualizerManager.setTrackAnalysis(track.analysis);
-        debugLog(`🎨 Enhanced visualizer mode: BPM=${track.analysis.bpm}, Energy=${(track.analysis.energy * 100).toFixed(0)}%, Mood=${track.analysis.mood}`, 'success');
-    } else {
-        visualizerManager.clearTrackAnalysis();
-        debugLog('🎨 Standard visualizer mode (no analysis data)', 'info');
-    }
+// ✅ NEW: Pass analysis data to visualizer if available
+if (track.analysis) {
+    visualizerManager.setTrackAnalysis(track.analysis);
+    debugLog(`🎨 Enhanced visualizer mode: BPM=${track.analysis.bpm}, Energy=${(track.analysis.energy * 100).toFixed(0)}%, Mood=${track.analysis.mood}`, 'success');
+} else {
+    visualizerManager.clearTrackAnalysis();
+    debugLog('🎨 Standard visualizer mode (no analysis data)', 'info');
+}
+
+// ✅ Ensure visualizer has dataArray
+if (!dataArray && analyser) {
+    bufferLength = analyser.frequencyBinCount;
+    dataArray = new Uint8Array(bufferLength);
+    debugLog('✅ Recreated dataArray for visualizer', 'info');
+}
 
     // Load audio using stored URL
     player.src = track.audioURL;
@@ -884,6 +1040,9 @@ player.play().then(() => {
 if (crossfadeManager && crossfadeManager.enabled && currentTrackIndex + 1 < playlist.length) {
     crossfadeManager.preloadNext(playlist[currentTrackIndex + 1]);
 }
+if (visualizerController) {
+        visualizerController.onTrackChange();
+    }
 }
 
 
@@ -1340,6 +1499,10 @@ playlistRenderer.render();
         startVisualizer();
     }
     updateMediaSession();
+
+            if (visualizerController) {
+        visualizerController.onPlayStateChange();
+    }
 });
 
         
@@ -1355,6 +1518,9 @@ player.addEventListener('pause', () => {
     
     perfManager.setPlayState(false);
     updateMediaSession();
+     if (visualizerController) {
+        visualizerController.onPlayStateChange();
+    }
 });
 
         // Time and Progress Updates (NEW)
@@ -1376,6 +1542,9 @@ player.addEventListener('timeupdate', () => {
     if (lyricsManager && perfManager.shouldUpdate('lyrics')) {
         const lyricsSettings = perfManager.getLyricsSettings();
         lyricsManager.update(player.currentTime, compactMode, lyricsSettings);
+    }
+    if (visualizerController) {
+        visualizerController.onTimeUpdate();
     }
 });
 
@@ -2641,253 +2810,6 @@ if (!document.pictureInPictureEnabled) {
             }
         });
 
-// ========== FULLSCREEN VISUALIZER SYSTEM (FIXED) ==========
-const fullscreenVizToggle = document.getElementById('fullscreen-viz-toggle');
-const fullscreenViz = document.getElementById('fullscreen-visualizer');
-const fullscreenVizCanvas = document.getElementById('fullscreen-viz-canvas');
-const vizModeBtn = document.getElementById('viz-mode-btn');
-const vizPrevBtn = document.getElementById('viz-prev-btn');
-const vizPlayPauseBtn = document.getElementById('viz-play-pause-btn');
-const vizNextBtn = document.getElementById('viz-next-btn');
-const vizCloseBtn = document.getElementById('viz-close-btn');
-const vizTitle = document.querySelector('.fullscreen-viz-title');
-const vizArtist = document.querySelector('.fullscreen-viz-artist');
-const vizCurrentTime = document.getElementById('viz-current-time');
-const vizDuration = document.getElementById('viz-duration');
-const vizForceHideBtn = document.createElement('button');
-vizForceHideBtn.id = 'viz-force-hide-btn';
-vizForceHideBtn.innerHTML = '👁️';
-vizForceHideBtn.title = 'Toggle controls visibility';
-fullscreenViz.appendChild(vizForceHideBtn);
-
-let controlsHidden = false;
-
-vizForceHideBtn.onclick = (e) => {
-    e.stopPropagation();
-    controlsHidden = !controlsHidden;
-    
-    if (controlsHidden) {
-        fullscreenViz.classList.add('controls-hidden');
-        vizForceHideBtn.style.opacity = '0';
-        vizForceHideBtn.style.pointerEvents = 'none';
-    } else {
-        fullscreenViz.classList.remove('controls-hidden');
-        vizForceHideBtn.style.opacity = '1';
-        vizForceHideBtn.style.pointerEvents = 'all';
-    }
-};
-
-let fullscreenVizActive = false;
-
-// Toggle fullscreen visualizer
-function toggleFullscreenViz(show) {
-    fullscreenVizActive = show;
-    
-    if (show) {
-        // Show fullscreen overlay
-        fullscreenViz.classList.remove('fullscreen-viz-hidden');
-        
-        // Resize canvas to full window
-        fullscreenVizCanvas.width = window.innerWidth;
-        fullscreenVizCanvas.height = window.innerHeight;
-        
-        // Initialize visualizer manager
-        if (analyser && dataArray) {
-            visualizerManager.initFullscreenVisualizer(fullscreenVizCanvas);
-            visualizerManager.startFullscreen(analyser, dataArray);
-        }
-        
-        // Update track info
-        updateFullscreenVizInfo();
-        
-        // Setup auto-hide
-        setupAutoHide();
-        
-        // Update button state
-        fullscreenVizToggle.classList.add('active');
-        fullscreenVizToggle.textContent = '🌌 Exit Visualizer';
-        
-        debugLog('Fullscreen visualizer activated', 'success');
-    } else {
-        // Hide fullscreen overlay
-        fullscreenViz.classList.add('fullscreen-viz-hidden');
-        
-        // Stop visualizer
-        visualizerManager.stopFullscreen();
-        
-        // Update button state
-        fullscreenVizToggle.classList.remove('active');
-        fullscreenVizToggle.textContent = '🌌 Fullscreen Visualizer';
-        
-        debugLog('Fullscreen visualizer deactivated', 'info');
-    }
-}
-
-// Setup auto-hide for controls
-let hideTimer = null;
-
-function setupAutoHide() {
-    const resetHideTimer = () => {
-        fullscreenViz.classList.remove('auto-hide');
-        
-        // If controls are manually hidden, show everything on tap
-        if (controlsHidden) {
-            controlsHidden = false;
-            fullscreenViz.classList.remove('controls-hidden');
-            vizForceHideBtn.style.opacity = '1';
-            vizForceHideBtn.style.pointerEvents = 'all';
-        }
-        
-        if (hideTimer) {
-            clearTimeout(hideTimer);
-            hideTimer = null;
-        }
-        
-        hideTimer = setTimeout(() => {
-            fullscreenViz.classList.add('auto-hide');
-            hideTimer = null;
-        }, 3000);
-    };
-    
-    // Remove old listeners to prevent duplicates
-    const oldMouseMove = fullscreenViz._autoHideMouseMove;
-    const oldClick = fullscreenViz._autoHideClick;
-    
-    if (oldMouseMove) fullscreenViz.removeEventListener('mousemove', oldMouseMove);
-    if (oldClick) fullscreenViz.removeEventListener('click', oldClick);
-    
-    // Store references for cleanup
-    fullscreenViz._autoHideMouseMove = resetHideTimer;
-    fullscreenViz._autoHideClick = resetHideTimer;
-    
-    // Add fresh listeners
-    fullscreenViz.addEventListener('mousemove', resetHideTimer);
-    fullscreenViz.addEventListener('click', resetHideTimer);
-    fullscreenViz.addEventListener('touchstart', resetHideTimer); // ADD THIS LINE
-    
-    // Initial call to start the timer
-    resetHideTimer();
-}
-
-// Update track info display
-function updateFullscreenVizInfo() {
-    if (currentTrackIndex !== -1 && playlist.length > 0) {
-        const track = playlist[currentTrackIndex];
-        vizTitle.textContent = track.metadata?.title || track.fileName;
-        vizArtist.textContent = track.metadata?.artist || 'Unknown Artist';
-        vizDuration.textContent = formatTime(player.duration || 0);
-        vizCurrentTime.textContent = formatTime(player.currentTime || 0);
-    } else {
-        vizTitle.textContent = 'No track loaded';
-        vizArtist.textContent = '--';
-        vizDuration.textContent = '0:00';
-        vizCurrentTime.textContent = '0:00';
-    }
-}
-
-// Event Handlers
-fullscreenVizToggle.onclick = () => {
-    debugLog('Fullscreen viz button clicked', 'info');
-    toggleFullscreenViz(!fullscreenVizActive);
-};
-
-vizModeBtn.onclick = () => {
-    const modes = ['bars', 'circular', 'waveform', 'particles'];
-    const currentMode = visualizerManager.vizMode;
-    const currentIndex = modes.indexOf(currentMode);
-    const nextMode = modes[(currentIndex + 1) % modes.length];
-    
-    visualizerManager.setVizMode(nextMode);
-    
-    const modeNames = {
-        'bars': 'Bars',
-        'circular': 'Circular',
-        'waveform': 'Waveform',
-        'particles': 'Particles'
-    };
-    
-    vizModeBtn.textContent = `🎨 Mode: ${modeNames[nextMode]}`;
-    debugLog(`Visualizer mode: ${modeNames[nextMode]}`, 'info');
-};
-
-vizPrevBtn.onclick = () => {
-    if (!prevButton.disabled) {
-        playPrevious();
-        updateFullscreenVizInfo();
-    }
-};
-
-vizPlayPauseBtn.onclick = () => {
-    if (player.paused) {
-        player.play();
-        vizPlayPauseBtn.textContent = '⏸ Pause';
-    } else {
-        player.pause();
-        vizPlayPauseBtn.textContent = '▶ Play';
-    }
-};
-
-vizNextBtn.onclick = () => {
-    if (!nextButton.disabled) {
-        playNext();
-        updateFullscreenVizInfo();
-    }
-};
-
-vizCloseBtn.onclick = () => {
-    toggleFullscreenViz(false);
-};
-
-// Keyboard shortcut: ESC to close
-document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && fullscreenVizActive) {
-        e.preventDefault();
-        toggleFullscreenViz(false);
-    }
-    
-    // V key to toggle visualizer
-    if ((e.key === 'v' || e.key === 'V') && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
-        e.preventDefault();
-        fullscreenVizToggle.click();
-    }
-});
-
-// Update play/pause button when player state changes
-player.addEventListener('play', () => {
-    if (fullscreenVizActive) {
-        vizPlayPauseBtn.textContent = '⏸ Pause';
-    }
-});
-
-player.addEventListener('pause', () => {
-    if (fullscreenVizActive) {
-        vizPlayPauseBtn.textContent = '▶ Play';
-    }
-});
-
-// Update time display
-player.addEventListener('timeupdate', () => {
-    if (fullscreenVizActive) {
-        vizCurrentTime.textContent = formatTime(player.currentTime || 0);
-    }
-});
-
-// Handle window resize
-window.addEventListener('resize', () => {
-    if (fullscreenVizActive) {
-        fullscreenVizCanvas.width = window.innerWidth;
-        fullscreenVizCanvas.height = window.innerHeight;
-    }
-});
-
-window.addEventListener('resize', () => {
-    if (lyricsManager) {
-        lyricsManager.onWindowResize();
-    }
-});
-
-debugLog('Fullscreen visualizer system initialized', 'success');
-// ========== END FULLSCREEN VISUALIZER SYSTEM ==========
 
 // Populate preset dropdown - will be called after audioPresetsManager is created
 function populatePresetDropdown() {
@@ -3371,6 +3293,40 @@ if (storageStatsBtn) {
         }
     };
 }
+
+    // ========== FALLBACK AUDIO DATA FUNCTION ==========
+window.getAudioDataForVisualizer = () => {
+    // Try to get audio data from multiple sources
+    if (analyser && dataArray) {
+        analyser.getByteFrequencyData(dataArray);
+        return {
+            dataArray: dataArray,
+            bufferLength: bufferLength,
+            analyser: analyser
+        };
+    } else if (window.sharedAnalyser && window.sharedDataArray) {
+        window.sharedAnalyser.getByteFrequencyData(window.sharedDataArray);
+        return {
+            dataArray: window.sharedDataArray,
+            bufferLength: window.sharedBufferLength,
+            analyser: window.sharedAnalyser
+        };
+    } else if (audioContext && analyser) {
+        // Create dataArray on the fly
+        bufferLength = analyser.frequencyBinCount;
+        dataArray = new Uint8Array(bufferLength);
+        analyser.getByteFrequencyData(dataArray);
+        console.log('⚠️ Created fallback dataArray for visualizer');
+        return {
+            dataArray: dataArray,
+            bufferLength: bufferLength,
+            analyser: analyser
+        };
+    }
+    
+    console.warn('⚠️ No audio data available for visualizer');
+    return null;
+};
 
     
 debugLog('Music player initialized');
