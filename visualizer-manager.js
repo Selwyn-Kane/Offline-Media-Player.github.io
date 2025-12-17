@@ -17,7 +17,8 @@ class VisualizerManager {
         this.bufferLength = null;
         
         // Animation control
-        this.animationId = null;
+        this.mainAnimationId = null;      // 🔥 FIX: Separate ID for main visualizer
+        this.fullscreenAnimationId = null; // 🔥 FIX: Separate ID for fullscreen
         this.enabled = true;
         this.isFullscreen = false;
         this.vizMode = this.loadVizMode();
@@ -430,19 +431,30 @@ initFullscreenVisualizer(canvas, analyser, dataArray, bufferLength) {
     console.log('✅ Fullscreen visualizer initialized with audio data');
 }
 
-    startFullscreen() {
-    if (!this.fullscreenCanvas || this.animationId) return;
+    /**
+ * Start fullscreen visualizer animation
+ */
+startFullscreen() {
+    if (!this.fullscreenCanvas || this.animationId) {
+        console.warn('⚠️ Cannot start fullscreen: canvas missing or already running');
+        return;
+    }
+    
+    // Validate we have audio data
+    if (!this.analyser || !this.dataArray) {
+        console.error('❌ Cannot start fullscreen: missing audio data');
+        console.log('Debug - analyser:', !!this.analyser, 'dataArray:', !!this.dataArray);
+        return;
+    }
     
     this.isFullscreen = true;
     this.performance.lastFrame = performance.now();
     
-    // Ensure we have audio data
-    if (!this.analyser || !this.dataArray) {
-        console.error('❌ Cannot start fullscreen: missing audio data');
-        return;
-    }
+    console.log('✅ Starting fullscreen visualizer animation');
+    console.log('Canvas:', this.fullscreenCanvas.width, 'x', this.fullscreenCanvas.height);
+    console.log('Audio data ready:', !!this.analyser, !!this.dataArray);
     
-    console.log('✅ Starting fullscreen visualizer');
+    // Start animation loop
     this.drawFullscreen();
 }
     
@@ -579,15 +591,16 @@ initFullscreenVisualizer(canvas, analyser, dataArray, bufferLength) {
     }
     
 drawFullscreen = () => {
-    // ✅ ADD THIS VALIDATION AT THE START
-    if (!this.analyser || !this.dataArray) {
-        console.error('❌ Missing audio data, stopping fullscreen visualizer');
+    // ✅ VALIDATION: Stop if missing essential components
+    if (!this.fullscreenCanvas || !this.fullscreenCtx) {
+        console.error('❌ Missing canvas/context, stopping fullscreen visualizer');
         this.stopFullscreen();
         return;
     }
     
-    if (!this.fullscreenCanvas || !this.analyser) {
-        this.animationId = null;
+    if (!this.analyser || !this.dataArray) {
+        console.error('❌ Missing audio data, stopping fullscreen visualizer');
+        this.stopFullscreen();
         return;
     }
     
@@ -598,7 +611,7 @@ drawFullscreen = () => {
     this.performance.lastFrame = now;
     
     try {
-        this.analyser.getByteFrequencyData(this.dataArray);  // Should work now!
+        this.analyser.getByteFrequencyData(this.dataArray);
         this.updateSmoothing(this.dataArray, deltaTime);
         const isBeat = this.detectBeat(this.dataArray);
         
@@ -623,10 +636,10 @@ drawFullscreen = () => {
         }
     } catch (error) {
         console.error('❌ Fullscreen draw error:', error);
-        // ✅ ADD: Stop on repeated errors
         this.stopFullscreen();
     }
 }
+
     
     drawFullscreenBars(isBeat) {
         const width = this.fullscreenCanvas.width;

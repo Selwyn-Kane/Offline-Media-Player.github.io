@@ -168,6 +168,13 @@ if (window.backgroundAudioHandler) {
     // Initialize volume control
     volumeControl = new VolumeControl(player, debugLog);
 
+    // âœ… ADD THIS: Reconnect audio chain if volume control initialized after audio context
+if (audioContext && window.volumeGainNode) {
+    setTimeout(() => {
+        reconnectAudioChainWithVolumeControl();
+    }, 100);
+}
+
     // Initialize custom background manager
 if (typeof CustomBackgroundManager !== 'undefined') {
     const backgroundManager = new CustomBackgroundManager(debugLog);
@@ -538,22 +545,34 @@ function setupAudioContext() {
     if (audioContext) {
         console.log('✅ Audio context already exists - skipping recreation');
         
-        // Create managers if they don't exist
+        // ✅ FIX: Create managers if they don't exist (PWA mode fix)
         if (!audioPresetsManager && bassFilter && midFilter && trebleFilter) {
-            audioPresetsManager = new AudioPresetsManager(bassFilter, midFilter, trebleFilter, debugLog);
-            audioPresetsManager.loadSavedPreset();
-            debugLog('✅ Audio presets manager initialized (late)', 'success');
-            populatePresetDropdown();
+            try {
+                audioPresetsManager = new AudioPresetsManager(bassFilter, midFilter, trebleFilter, debugLog);
+                audioPresetsManager.loadSavedPreset();
+                debugLog('✅ Audio presets manager initialized (late)', 'success');
+                populatePresetDropdown();
+            } catch (err) {
+                debugLog(`⚠️ Failed to init presets manager: ${err.message}`, 'warning');
+            }
         }
         
         if (!autoEQManager && audioPresetsManager) {
-            autoEQManager = new AutoEQManager(audioPresetsManager, debugLog);
-            debugLog('✅ Auto-EQ system initialized (late)', 'success');
+            try {
+                autoEQManager = new AutoEQManager(audioPresetsManager, debugLog);
+                debugLog('✅ Auto-EQ system initialized (late)', 'success');
+            } catch (err) {
+                debugLog(`⚠️ Failed to init Auto-EQ: ${err.message}`, 'warning');
+            }
         }
         
         if (!crossfadeManager) {
-            crossfadeManager = new CrossfadeManager(audioContext, debugLog);
-            debugLog('✅ Crossfade system initialized (late)', 'success');
+            try {
+                crossfadeManager = new CrossfadeManager(audioContext, debugLog);
+                debugLog('✅ Crossfade system initialized (late)', 'success');
+            } catch (err) {
+                debugLog(`⚠️ Failed to init crossfade: ${err.message}`, 'warning');
+            }
         }
         
         // ✅ NEW: Initialize visualizer if it hasn't been initialized yet
@@ -567,6 +586,14 @@ function setupAudioContext() {
     }
     
     try {
+        // ✅ FIX: Force user interaction before creating AudioContext in PWA mode
+        const isHttps = window.location.protocol === 'https:';
+        const isPWA = window.matchMedia('(display-mode: standalone)').matches;
+        
+        if (isHttps || isPWA) {
+            console.log('🔒 HTTPS/PWA mode - ensuring user interaction');
+        }
+        
         // ✅ Check if background-audio-handler already created everything
         if (window.sharedAudioContext && window.sharedAnalyser && window.sharedAudioSource) {
             debugLog('✅ Using audio system from background-audio-handler', 'success');
@@ -583,6 +610,15 @@ function setupAudioContext() {
         } else {
             // Create our own audio context (first time only)
             audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            
+            // ✅ PWA FIX: Resume immediately if suspended
+            if (audioContext.state === 'suspended') {
+                console.log('⚠️ AudioContext suspended, resuming...');
+                audioContext.resume().catch(err => {
+                    console.error('❌ Failed to resume:', err);
+                });
+            }
+            
             analyser = audioContext.createAnalyser();
             analyser.fftSize = APP_CONFIG.FFT_SIZE;
             bufferLength = analyser.frequencyBinCount;
@@ -612,7 +648,6 @@ function setupAudioContext() {
                     window.sharedAudioSource = audioSource;
                     console.log('✅ Created NEW audio source (first time)');
                 } catch (error) {
-                    // Source already exists - reuse it
                     console.warn('⚠️ Audio source already exists, reusing:', error.message);
                     audioSource = window.sharedAudioSource;
                 }
@@ -622,15 +657,30 @@ function setupAudioContext() {
             }
             
             // Connect the chain ONLY if not already connected
-            if (!window.audioChainConnected) {
-                audioSource.connect(bassFilter);
-                bassFilter.connect(midFilter);
-                midFilter.connect(trebleFilter);
-                trebleFilter.connect(analyser);
-                analyser.connect(audioContext.destination);
-                window.audioChainConnected = true;
-                console.log('✅ Audio chain connected');
-            }
+            // âœ… NEW CODE (ADD THIS):
+// Connect with volume control and compression integrated
+if (window.volumeGainNode && window.volumeCompressor && window.volumeMakeupGain) {
+    // Chain: source → bass → mid → treble → gain → compressor → makeup → analyser → output
+    audioSource.connect(bassFilter);
+    bassFilter.connect(midFilter);
+    midFilter.connect(trebleFilter);
+    trebleFilter.connect(window.volumeGainNode);
+    window.volumeGainNode.connect(window.volumeCompressor);
+    window.volumeCompressor.connect(window.volumeMakeupGain);
+    window.volumeMakeupGain.connect(analyser);
+    analyser.connect(audioContext.destination);
+    
+    debugLog('âœ… Audio chain connected WITH volume control & compression', 'success');
+} else {
+    // Fallback: simple chain (volume control not ready yet)
+    audioSource.connect(bassFilter);
+    bassFilter.connect(midFilter);
+    midFilter.connect(trebleFilter);
+    trebleFilter.connect(analyser);
+    analyser.connect(audioContext.destination);
+    
+    debugLog('âœ… Audio chain connected WITHOUT volume control (will reconnect later)', 'info');
+}
         }
         
         // Share globally
@@ -680,6 +730,43 @@ function setupAudioContext() {
                 debugLog('❌ Could not create fallback dataArray', 'error');
             }
         }
+    }
+}
+
+    /**
+ * âœ… NEW FUNCTION: Reconnect audio chain when volume control initializes late
+ */
+function reconnectAudioChainWithVolumeControl() {
+    if (!audioContext || !audioSource || !bassFilter || !midFilter || !trebleFilter || !analyser) {
+        debugLog('âŒ Cannot reconnect - audio chain not initialized', 'error');
+        return false;
+    }
+    
+    if (!window.volumeGainNode || !window.volumeCompressor || !window.volumeMakeupGain) {
+        debugLog('âŒ Cannot reconnect - volume control nodes not ready', 'error');
+        return false;
+    }
+    
+    try {
+        // Disconnect old connections
+        trebleFilter.disconnect();
+        if (window.volumeGainNode) window.volumeGainNode.disconnect();
+        if (window.volumeCompressor) window.volumeCompressor.disconnect();
+        if (window.volumeMakeupGain) window.volumeMakeupGain.disconnect();
+        analyser.disconnect();
+        
+        // Reconnect with proper order
+        trebleFilter.connect(window.volumeGainNode);
+        window.volumeGainNode.connect(window.volumeCompressor);
+        window.volumeCompressor.connect(window.volumeMakeupGain);
+        window.volumeMakeupGain.connect(analyser);
+        analyser.connect(audioContext.destination);
+        
+        debugLog('âœ… Audio chain reconnected with volume control', 'success');
+        return true;
+    } catch (err) {
+        debugLog(`âŒ Failed to reconnect audio chain: ${err.message}`, 'error');
+        return false;
     }
 }
         
@@ -760,6 +847,23 @@ function broadcastStateToWidget() {
 player.addEventListener('play', broadcastStateToWidget);
 player.addEventListener('pause', broadcastStateToWidget);
 player.addEventListener('timeupdate', broadcastStateToWidget);
+
+    // ✅ PWA FIX: Resume AudioContext on any user interaction
+const resumeAudioOnInteraction = () => {
+    if (audioContext && audioContext.state === 'suspended') {
+        console.log('🔓 Resuming AudioContext on user interaction');
+        audioContext.resume().then(() => {
+            console.log('✅ AudioContext resumed');
+        }).catch(err => {
+            console.error('❌ Failed to resume AudioContext:', err);
+        });
+    }
+};
+
+// Add listeners for PWA mode
+document.addEventListener('click', resumeAudioOnInteraction, { once: true });
+document.addEventListener('touchstart', resumeAudioOnInteraction, { once: true });
+player.addEventListener('play', resumeAudioOnInteraction, { once: true });
         
         // --- Equalizer Functions ---
         function setupEqualizerControls() {

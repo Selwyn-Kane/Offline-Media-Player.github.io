@@ -354,41 +354,44 @@ class EnhancedPlaylistRenderer {
     /**
      * Main render function with virtual scrolling
      */
-    render() {
-        if (!this.playlistItems) return;
-        
-        // Clear cache when re-rendering
-        this.itemCache.clear();
-        
-        if (this.filteredPlaylist.length === 0) {
-            this.renderEmptyState();
-            return;
-        }
-        
-        // For small playlists, render all
-        if (this.filteredPlaylist.length <= 50) {
-            this.renderAllItems();
-        } else {
-            this.renderVisibleItems();
-        }
-        
-        this.updateUI();
+render() {
+    if (this.filteredPlaylist.length === 0) {
+        this.renderEmptyState();
+        return;
     }
     
-    /**
-     * Render all items (for small playlists)
-     */
-    renderAllItems() {
-        const fragment = document.createDocumentFragment();
-        
-        this.filteredPlaylist.forEach((track, index) => {
-            const item = this.createTrackItem(track, index);
-            fragment.appendChild(item);
-        });
-        
-        this.playlistItems.innerHTML = '';
-        this.playlistItems.appendChild(fragment);
+    // Use simple rendering for small playlists
+    if (this.filteredPlaylist.length < 100) {
+        this.renderAllItems();
+    } else {
+        this.renderVisibleItems();
     }
+    
+    this.updateUI();
+}
+
+renderAllItems() {
+    const fragment = document.createDocumentFragment();
+    
+    this.filteredPlaylist.forEach((track, index) => {
+        const item = this.createTrackItem(track, index);
+        fragment.appendChild(item);
+    });
+    
+    this.playlistItems.innerHTML = '';
+    this.playlistItems.appendChild(fragment);
+    
+    // 🔥 CRITICAL FIX: Load images IMMEDIATELY, no lazy loading
+    // Lazy loading was causing images to never appear
+    requestAnimationFrame(() => {
+        const images = this.playlistItems.querySelectorAll('img[data-src]');
+        images.forEach(img => {
+            img.src = img.dataset.src;
+            img.removeAttribute('data-src');
+        });
+        console.log(`✅ Loaded ${images.length} album art images`);
+    });
+}
     
     /**
      * Render visible items with virtual scrolling

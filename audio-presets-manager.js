@@ -22,7 +22,7 @@ class AudioPresetsManager {
             // GENRE-SPECIFIC PRESETS (refined based on typical production characteristics)
             electronic: {
                 name: 'Electronic/EDM',
-                bass: 5,        // Strong sub-bass for synth bass and kicks
+                bass: 4,        // Strong sub-bass for synth bass and kicks
                 mid: -2,        // Clear mid scoop for clean separation
                 treble: 5,      // Bright highs for synths and hi-hats
                 description: 'Deep sub-bass with crystalline highs',
@@ -76,7 +76,7 @@ class AudioPresetsManager {
             
             hiphop: {
                 name: 'Hip-Hop',
-                bass: 5,        // Massive sub-bass for 808s
+                bass: 4,        // Massive sub-bass for 808s
                 mid: -2,        // Scooped for vocal clarity
                 treble: 3,      // Hi-hat and snare presence
                 description: 'Deep bass with crisp vocal presence',
@@ -244,14 +244,14 @@ class AudioPresetsManager {
     // RULE 1: Vintage Recordings - Handle with care
     if (isVintage) {
         adjusted.treble = Math.min(adjusted.treble + 2, 8);
-        adjusted.bass = Math.min(adjusted.bass + 1, 5); // ✅ CAPPED AT 5
+        adjusted.bass = Math.min(adjusted.bass + 1, 4); // ✅ CAPPED AT 4
         
         this.debugLog('📼 Vintage adjustment: +2 treble, +1 bass', 'info');
     }
     
     // RULE 2: Over-Compressed Tracks - Restore perceived dynamics
     if (isCompressed && !['flat', 'podcast'].includes(presetName)) {
-        adjusted.bass = Math.min(adjusted.bass + 2, 5); // ✅ CAPPED AT 5
+        adjusted.bass = Math.min(adjusted.bass + 2, 4); // ✅ CAPPED AT 4
         adjusted.treble = Math.min(adjusted.treble + 2, 8);
         
         this.debugLog('🗜️ Compression compensation: +2 bass, +2 treble', 'info');
@@ -268,7 +268,7 @@ class AudioPresetsManager {
     
     // RULE 4: Frequency Deficiency Correction
     if (bassDeficiency && presetName !== 'podcast' && presetName !== 'vocal') {
-        adjusted.bass = Math.min(adjusted.bass + 3, 5); // ✅ CAPPED AT 5
+        adjusted.bass = Math.min(adjusted.bass + 3, 4); // ✅ CAPPED AT 4
         this.debugLog('📊 Bass deficiency: +3 bass', 'info');
     }
     
@@ -314,7 +314,7 @@ class AudioPresetsManager {
     
     // RULE 9: Danceability + Low Bass = Need boost
     if (danceability > 0.7 && bassDeficiency) {
-        adjusted.bass = Math.min(adjusted.bass + 4, 5); // ✅ CAPPED AT 5
+        adjusted.bass = Math.min(adjusted.bass + 4, 4); // ✅ CAPPED AT 4
         this.debugLog('💃 High danceability + low bass: +4 bass', 'info');
     }
     
@@ -343,20 +343,20 @@ class AudioPresetsManager {
     
     // RULE 12: BPM-Based Adjustment
     if (bpm > 150 && danceability > 0.6) {
-        adjusted.bass = Math.min(adjusted.bass + 1, 5); // ✅ CAPPED AT 5
+        adjusted.bass = Math.min(adjusted.bass + 1, 4); // ✅ CAPPED AT 4
         adjusted.treble = Math.min(adjusted.treble + 1, 8);
         this.debugLog('🏃 Fast tempo: +1 bass, +1 treble', 'info');
     }
     
     // RULE 13: Quiet Recordings - Boost perceived loudness
     if (isQuiet && presetName !== 'classical') {
-        adjusted.bass = Math.min(adjusted.bass + 2, 5); // ✅ CAPPED AT 5
+        adjusted.bass = Math.min(adjusted.bass + 2, 4); // ✅ CAPPED AT 4
         adjusted.treble = Math.min(adjusted.treble + 2, 8);
         this.debugLog('🔇 Quiet recording: +2 bass, +2 treble', 'info');
     }
     
     // ✅ FINAL SAFETY CAP - ABSOLUTE MAXIMUM FOR BASS
-    adjusted.bass = Math.min(adjusted.bass, 5);
+    adjusted.bass = Math.min(adjusted.bass, 4);
     
     return adjusted;
 }

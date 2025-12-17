@@ -570,6 +570,22 @@ applyHardRules(analysis, genre) {
      */
     applyAutoEQ(track) {
         if (!this.enabled) {
+             // Calculate total gain boost to apply makeup gain compensation
+    const totalBoost = Math.abs(bassAdjust) + Math.abs(midAdjust) + Math.abs(trebleAdjust);
+    
+    if (totalBoost > 6 && window.volumeMakeupGain) {
+        // Reduce makeup gain to prevent clipping on heavy EQ
+        const compensationFactor = Math.max(0.6, 1 - (totalBoost / 36)); // Max 40% reduction
+        window.volumeMakeupGain.gain.setValueAtTime(
+            1.2 * compensationFactor, 
+            window.audioContext.currentTime
+        );
+        
+        this.debugLog(`ðŸŽšï¸ Applied gain compensation: ${(compensationFactor * 100).toFixed(0)}%`, 'info');
+    } else if (window.volumeMakeupGain) {
+        // Reset to normal
+        window.volumeMakeupGain.gain.setValueAtTime(1.2, window.audioContext.currentTime);
+    }
             return;
         }
         

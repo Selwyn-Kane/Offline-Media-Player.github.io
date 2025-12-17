@@ -97,61 +97,59 @@ class VolumeControl {
         this.player.addEventListener('play', initAudio, { once: true });
     }
     
-    /**
-     * Initialize audio nodes and connect them properly
-     */
-    initAudioNodes() {
-        if (this.isAudioContextInitialized) return;
+/**
+ * Initialize audio nodes and connect them properly
+ * âœ… FIX: Use existing audio chain from script.js instead of creating new source
+ */
+initAudioNodes() {
+    if (this.isAudioContextInitialized) return;
+    
+    try {
+        // âœ… CRITICAL FIX: Use audio context from script.js
+        this.audioContext = window.audioContext || window.sharedAudioContext;
         
-        try {
-            // Create audio context
-            const AudioContext = window.AudioContext || window.webkitAudioContext;
-            if (!AudioContext) {
-                this.debugLog('Web Audio API not supported - boost will not work', 'warn');
-                return;
-            }
-            
-            this.audioContext = new AudioContext();
-            
-            // Resume context if it's suspended (browser autoplay policy)
-            if (this.audioContext.state === 'suspended') {
-                this.audioContext.resume();
-            }
-            
-            // Create source from the audio element
-            this.sourceNode = this.audioContext.createMediaElementSource(this.player);
-            
-            // Create gain node for volume control and boost
-            this.gainNode = this.audioContext.createGain();
-            const initialGain = this.baseVolume * (this.boostEnabled ? this.boostAmount : 1.0);
-            this.gainNode.gain.value = initialGain;
-            
-            // Create compressor for dynamic range compression
-            this.compressor = this.audioContext.createDynamicsCompressor();
-            this.compressor.threshold.setValueAtTime(-24, this.audioContext.currentTime);
-            this.compressor.knee.setValueAtTime(30, this.audioContext.currentTime);
-            this.compressor.ratio.setValueAtTime(12, this.audioContext.currentTime);
-            this.compressor.attack.setValueAtTime(0.003, this.audioContext.currentTime);
-            this.compressor.release.setValueAtTime(0.25, this.audioContext.currentTime);
-            
-            // Connect the audio chain: source -> gain -> compressor -> destination
-            this.sourceNode.connect(this.gainNode);
-            this.gainNode.connect(this.compressor);
-            this.compressor.connect(this.audioContext.destination);
-            
-            // Set player volume to max since we control via gain node
-            this.player.volume = 1.0;
-            
-            this.isAudioContextInitialized = true;
-            
-            // Reapply current volume through the gain node
-            this.applyVolume(this.baseVolume);
-            
-            this.debugLog('🎚️ Web Audio API initialized - boost feature enabled', 'success');
-        } catch (err) {
-            this.debugLog(`Failed to initialize Web Audio: ${err.message}`, 'error');
+        if (!this.audioContext) {
+            this.debugLog('AudioContext not yet created by script.js', 'warn');
+            return;
         }
+        
+        // Resume context if suspended
+        if (this.audioContext.state === 'suspended') {
+            this.audioContext.resume();
+        }
+        
+        // âœ… FIX: Don't create source - it already exists in script.js
+        // We'll insert our nodes into the existing chain
+        
+        // Create gain node for volume control and boost
+        this.gainNode = this.audioContext.createGain();
+        const initialGain = this.baseVolume * (this.boostEnabled ? this.boostAmount : 1.0);
+        this.gainNode.gain.value = initialGain;
+        
+        // Create compressor with settings optimized to prevent clipping
+        this.compressor = this.audioContext.createDynamicsCompressor();
+        this.compressor.threshold.setValueAtTime(-10, this.audioContext.currentTime); // âœ… Changed from -24
+        this.compressor.knee.setValueAtTime(20, this.audioContext.currentTime);      // âœ… Changed from 30
+        this.compressor.ratio.setValueAtTime(20, this.audioContext.currentTime);      // âœ… Changed from 12
+        this.compressor.attack.setValueAtTime(0.001, this.audioContext.currentTime);  // âœ… Faster attack
+        this.compressor.release.setValueAtTime(0.1, this.audioContext.currentTime);   // âœ… Faster release
+        
+        // âœ… CRITICAL: Create makeup gain to compensate for compression
+        this.makeupGain = this.audioContext.createGain();
+        this.makeupGain.gain.value = 1.2; // Compensate for compression reduction
+        
+        // Store references globally for script.js to use
+        window.volumeGainNode = this.gainNode;
+        window.volumeCompressor = this.compressor;
+        window.volumeMakeupGain = this.makeupGain;
+        
+        this.isAudioContextInitialized = true;
+        
+        this.debugLog('ðŸŽšï¸ Volume control nodes created - awaiting chain connection', 'success');
+    } catch (err) {
+        this.debugLog(`Failed to initialize audio nodes: ${err.message}`, 'error');
     }
+}
     
     /**
      * Apply volume to the appropriate control (gain node or player)

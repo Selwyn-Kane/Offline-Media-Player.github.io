@@ -244,10 +244,10 @@ enterFullscreen() {
     this.elements.canvas.width = window.innerWidth;
     this.elements.canvas.height = window.innerHeight;
     
-    // ✅ CRITICAL: Get fresh audio data
+    // ✅ FIX: Get fresh audio data BEFORE initializing
     this.updateAudioData();
     
-    // ✅ VALIDATE we got audio data
+    // ✅ FIX: Validate we got audio data
     if (!this.audioData || !this.audioData.analyser || !this.audioData.dataArray) {
         console.error('❌ Failed to get audio data for fullscreen visualizer');
         alert('Cannot start visualizer: audio system not ready. Please play a track first.');
@@ -255,22 +255,25 @@ enterFullscreen() {
         return;
     }
     
-    console.log('✅ Audio data retrieved:', {
+    console.log('✅ Audio data validated:', {
         hasAnalyser: !!this.audioData.analyser,
         hasDataArray: !!this.audioData.dataArray,
         bufferLength: this.audioData.bufferLength
     });
     
-    // Initialize fullscreen visualizer WITH audio data
+    // ✅ FIX: Initialize WITH audio data
     this.manager.initFullscreenVisualizer(
         this.elements.canvas,
         this.audioData.analyser,
         this.audioData.dataArray,
         this.audioData.bufferLength
     );
-
-    // ✅ FIXED: Call startFullscreen WITHOUT parameters
-    this.manager.startFullscreen();
+    
+    // ✅ FIX: Force a small delay before starting animation
+    setTimeout(() => {
+        this.manager.startFullscreen();
+        console.log('✅ Fullscreen visualizer animation started');
+    }, 100);
     
     // Update track info
     this.updateTrackInfo();
