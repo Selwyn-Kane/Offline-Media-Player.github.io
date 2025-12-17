@@ -205,6 +205,45 @@ class EnhancedPlaylistRenderer {
             });
         }
         
+        // 🔥 EVENT DELEGATION for playlist items (works with cache!)
+        if (this.playlistItems) {
+            this.playlistItems.addEventListener('click', (e) => {
+                const item = e.target.closest('.playlist-item');
+                if (!item) return;
+                
+                const actualIndex = parseInt(item.dataset.actualIndex);
+                if (isNaN(actualIndex)) return;
+                
+                // Edit button
+                if (e.target.classList.contains('playlist-item-edit-btn')) {
+                    e.stopPropagation();
+                    if (this.onEditClick) {
+                        this.onEditClick(actualIndex);
+                    }
+                    return;
+                }
+                
+                // Menu button (3 dots)
+                if (e.target.classList.contains('playlist-item-menu-btn') || 
+                    e.target.closest('.playlist-item-menu-btn')) {
+                    e.stopPropagation();
+                    this.showContextMenu(e, actualIndex);
+                    return;
+                }
+                
+                // Selection mode
+                if (this.selectionMode) {
+                    this.toggleSelection(actualIndex);
+                    item.classList.toggle('selected');
+                } else {
+                    // Regular track click
+                    if (this.onTrackClick) {
+                        this.onTrackClick(actualIndex);
+                    }
+                }
+            });
+        }
+        
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
@@ -461,6 +500,7 @@ renderAllItems() {
         
         // Find actual index in original playlist
         const actualIndex = this.playlist.indexOf(track);
+        item.dataset.actualIndex = actualIndex; 
         
         // Draggable
         item.draggable = true;

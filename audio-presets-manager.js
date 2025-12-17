@@ -24,7 +24,7 @@ class AudioPresetsManager {
                 name: 'Electronic/EDM',
                 bass: 4,        // Strong sub-bass for synth bass and kicks
                 mid: -2,        // Clear mid scoop for clean separation
-                treble: 5,      // Bright highs for synths and hi-hats
+                treble: 4,      // Bright highs for synths and hi-hats
                 description: 'Deep sub-bass with crystalline highs',
                 philosophy: 'V-curve emphasizing synthetic frequency extremes'
             },
@@ -42,7 +42,7 @@ class AudioPresetsManager {
                 name: 'Metal',
                 bass: 3,        // Controlled low-end for tight palm mutes
                 mid: -1,        // Slight scoop for modern metal clarity
-                treble: 6,      // Very bright for double bass and cymbals
+                treble: 4,      // Very bright for double bass and cymbals
                 description: 'Tight bass with extreme clarity',
                 philosophy: 'Precision and aggression, no muddiness'
             },
@@ -115,7 +115,7 @@ class AudioPresetsManager {
                 name: 'Treble Boost',
                 bass: 0,        // Leave bass alone
                 mid: 1,         // Slight upper-mid lift for clarity
-                treble: 6,      // Strong high-shelf for dull recordings
+                treble: 4,      // Strong high-shelf for dull recordings
                 description: 'Brightens dark/vintage recordings',
                 philosophy: 'Restores lost high-frequency detail'
             },
@@ -125,7 +125,7 @@ class AudioPresetsManager {
                 name: 'Vintage Tape',
                 bass: 2,        // Restore some low-end roll-off
                 mid: 1,         // Slight warmth
-                treble: 5,      // Restore tape high-frequency loss
+                treble: 4,      // Restore tape high-frequency loss
                 description: 'Compensates for analog tape aging',
                 philosophy: 'Gentle restoration of frequency extremes'
             },
@@ -143,7 +143,7 @@ class AudioPresetsManager {
                 name: 'Live Recording',
                 bass: 2,        // Stage/room warmth
                 mid: 3,         // Instrument separation
-                treble: 5,      // Crowd and cymbal detail
+                treble: 4,      // Crowd and cymbal detail
                 description: 'Enhances live energy and space',
                 philosophy: 'Emphasizes ambience and crowd energy'
             },
