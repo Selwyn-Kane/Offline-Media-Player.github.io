@@ -67,15 +67,18 @@ class EnhancedFileLoadingManager {
     
     // ========== INITIALIZATION ==========
     
-    init(dependencies) {
-        this.metadataParser = dependencies.metadataParser;
-        this.vttParser = dependencies.vttParser;
-        this.analysisParser = dependencies.analysisParser;
-        this.customMetadataStore = dependencies.customMetadataStore;
-        this.analyzer = dependencies.analyzer;
-        
-        this.debugLog('✅ Enhanced File Loading Manager v2.0 initialized', 'success');
-    }
+init(dependencies) {
+    this.metadataParser = dependencies.metadataParser;
+    this.vttParser = dependencies.vttParser;
+    this.analysisParser = dependencies.analysisParser;
+    this.customMetadataStore = dependencies.customMetadataStore;
+    this.analyzer = dependencies.analyzer;
+    
+    // ✅ ADD THIS
+    this.workerManager = dependencies.workerManager || window.workerManager;
+    
+    this.debugLog('✅ Enhanced File Loading Manager v2.0 initialized', 'success');
+}
     
     setCallbacks(callbacks) {
         Object.assign(this.callbacks, callbacks);

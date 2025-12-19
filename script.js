@@ -59,6 +59,10 @@ window.colorCache = colorCache;
 let backgroundAnalysisRunning = false;
 
 document.addEventListener('DOMContentLoaded', () => {
+    // ✅ ADD THIS FIRST - Initialize Worker Manager
+    const workerManager = createMusicPlayerWorkerManager(debugLog);
+    window.workerManager = workerManager; // Make it globally accessible
+    debugLog('✅ Worker pool system initialized', 'success');
 
     // Initialize custom metadata store
     const customMetadataStore = new CustomMetadataStore();
@@ -168,10 +172,17 @@ if (window.backgroundAudioHandler) {
     // Initialize volume control
     volumeControl = new VolumeControl(player, debugLog);
 
-    // âœ… ADD THIS: Reconnect audio chain if volume control initialized after audio context
+    // ✅ ADD THIS: Queue reconnection for after audio context init
+window.volumeControlInitialized = true;
+
+// ✅ ADD THIS: If audio context exists, reconnect immediately
 if (audioContext && window.volumeGainNode) {
     setTimeout(() => {
-        reconnectAudioChainWithVolumeControl();
+        const success = reconnectAudioChainWithVolumeControl();
+        if (!success) {
+            // Retry after 500ms if it failed
+            setTimeout(() => reconnectAudioChainWithVolumeControl(), 500);
+        }
     }, 100);
 }
 
@@ -618,23 +629,6 @@ function setupAudioContext() {
                     console.error('❌ Failed to resume:', err);
                 });
             }
-
-            // Connect crossfade gain node into audio chain
-// Insert between treble filter and volume control
-if (crossfadeManager && !crossfadeManager.isInitialized) {
-    crossfadeManager.initAudioNodes();
-    
-    // Reconnect audio chain with crossfade
-    if (window.volumeGainNode) {
-        // treble → crossfade → volume → compressor → makeup → analyser → output
-        trebleFilter.disconnect();
-        crossfadeManager.connectToAudioChain(trebleFilter, window.volumeGainNode);
-    } else {
-        // treble → crossfade → analyser → output
-        trebleFilter.disconnect();
-        crossfadeManager.connectToAudioChain(trebleFilter, analyser);
-    }
-}
             
             analyser = audioContext.createAnalyser();
             analyser.fftSize = APP_CONFIG.FFT_SIZE;
@@ -673,31 +667,45 @@ if (crossfadeManager && !crossfadeManager.isInitialized) {
                 console.log('✅ Reusing existing audio source');
             }
             
-            // Connect the chain ONLY if not already connected
-            // âœ… NEW CODE (ADD THIS):
-// Connect with volume control and compression integrated
-if (window.volumeGainNode && window.volumeCompressor && window.volumeMakeupGain) {
-    // Chain: source → bass → mid → treble → gain → compressor → makeup → analyser → output
-    audioSource.connect(bassFilter);
-    bassFilter.connect(midFilter);
-    midFilter.connect(trebleFilter);
-    trebleFilter.connect(window.volumeGainNode);
-    window.volumeGainNode.connect(window.volumeCompressor);
-    window.volumeCompressor.connect(window.volumeMakeupGain);
-    window.volumeMakeupGain.connect(analyser);
-    analyser.connect(audioContext.destination);
-    
-    debugLog('âœ… Audio chain connected WITH volume control & compression', 'success');
-} else {
-    // Fallback: simple chain (volume control not ready yet)
-    audioSource.connect(bassFilter);
-    bassFilter.connect(midFilter);
-    midFilter.connect(trebleFilter);
-    trebleFilter.connect(analyser);
-    analyser.connect(audioContext.destination);
-    
-    debugLog('âœ… Audio chain connected WITHOUT volume control (will reconnect later)', 'info');
-}
+            // Connect with volume control and compression integrated
+            if (window.volumeGainNode && window.volumeCompressor && window.volumeMakeupGain) {
+                // Chain: source → bass → mid → treble → gain → compressor → makeup → analyser → output
+                audioSource.connect(bassFilter);
+                bassFilter.connect(midFilter);
+                midFilter.connect(trebleFilter);
+                trebleFilter.connect(window.volumeGainNode);
+                window.volumeGainNode.connect(window.volumeCompressor);
+                window.volumeCompressor.connect(window.volumeMakeupGain);
+                window.volumeMakeupGain.connect(analyser);
+                analyser.connect(audioContext.destination);
+                
+                debugLog('✅ Audio chain connected WITH volume control & compression', 'success');
+            } else {
+                // Fallback: simple chain (volume control not ready yet)
+                audioSource.connect(bassFilter);
+                bassFilter.connect(midFilter);
+                midFilter.connect(trebleFilter);
+                trebleFilter.connect(analyser);
+                analyser.connect(audioContext.destination);
+                
+                debugLog('✅ Audio chain connected WITHOUT volume control (will reconnect later)', 'info');
+            }
+            
+            // ✅ CROSSFADE INIT (inside else block, after audio chain)
+            if (crossfadeManager && !crossfadeManager.isInitialized) {
+                crossfadeManager.initAudioNodes();
+                
+                // Reconnect audio chain with crossfade
+                if (window.volumeGainNode) {
+                    // treble → crossfade → volume → compressor → makeup → analyser → output
+                    trebleFilter.disconnect();
+                    crossfadeManager.connectToAudioChain(trebleFilter, window.volumeGainNode);
+                } else {
+                    // treble → crossfade → analyser → output
+                    trebleFilter.disconnect();
+                    crossfadeManager.connectToAudioChain(trebleFilter, analyser);
+                }
+            }
         }
         
         // Share globally
@@ -788,13 +796,17 @@ function reconnectAudioChainWithVolumeControl() {
 }
         
 function startVisualizer() {
-    // 🆕 CHECK IF VISUALIZER SHOULD RUN
     if (perfManager.shouldRunVisualizer() && analyser) {
-        // Ensure visualizer has dataArray
-        if (!dataArray) {
+        // ✅ CRITICAL: Always ensure dataArray exists
+        if (!dataArray || dataArray.length === 0) {
             bufferLength = analyser.frequencyBinCount;
             dataArray = new Uint8Array(bufferLength);
-            debugLog('✅ Created missing dataArray for visualizer', 'info');
+            
+            // Share globally for other components
+            window.sharedDataArray = dataArray;
+            window.sharedBufferLength = bufferLength;
+            
+            debugLog('✅ Created dataArray for visualizer', 'success');
         }
         
         // Ensure visualizer is initialized before starting
@@ -802,7 +814,6 @@ function startVisualizer() {
             visualizerManager.initMainVisualizer(canvas, analyser, dataArray, bufferLength);
         }
         
-        // 🆕 APPLY PERFORMANCE SETTINGS
         const vizSettings = perfManager.getVisualizerSettings();
         visualizerManager.start(true, vizSettings);
     }
@@ -1160,11 +1171,16 @@ player.play().then(() => {
 if (crossfadeManager && crossfadeManager.enabled && currentTrackIndex + 1 < playlist.length) {
     const nextTrack = playlist[currentTrackIndex + 1];
     
-    // ✅ FIX: Wait for duration to be available
+    // ✅ CRITICAL: Wait for both duration AND playback to start
     const startCrossfadeMonitoring = () => {
         if (!player.duration || isNaN(player.duration)) {
             debugLog('⏳ Waiting for track duration before starting crossfade...', 'info');
-            return;
+            return false;
+        }
+        
+        if (player.paused) {
+            debugLog('⏳ Waiting for playback before starting crossfade...', 'info');
+            return false;
         }
         
         crossfadeManager.startMonitoring(player, track, nextTrack, async (fadeData) => {
@@ -1184,14 +1200,26 @@ if (crossfadeManager && crossfadeManager.enabled && currentTrackIndex + 1 < play
                 debugLog(`⏭️ Skipped intro: jumped to ${fadeData.startTime.toFixed(1)}s`, 'success');
             }
         });
+        
+        return true;
     };
     
-    // Start monitoring once duration is available
-    if (player.duration && !isNaN(player.duration)) {
-        startCrossfadeMonitoring();
-    } else {
-        player.addEventListener('loadedmetadata', startCrossfadeMonitoring, { once: true });
-        player.addEventListener('durationchange', startCrossfadeMonitoring, { once: true });
+    // Try to start immediately
+    if (!startCrossfadeMonitoring()) {
+        // If not ready, wait for play event
+        const onPlayForCrossfade = () => {
+            if (startCrossfadeMonitoring()) {
+                player.removeEventListener('play', onPlayForCrossfade);
+            }
+        };
+        player.addEventListener('play', onPlayForCrossfade);
+        
+        // Also listen for duration change as backup
+        player.addEventListener('durationchange', () => {
+            if (startCrossfadeMonitoring()) {
+                player.removeEventListener('play', onPlayForCrossfade);
+            }
+        }, { once: true });
     }
 }
 if (visualizerController) {
@@ -1460,12 +1488,23 @@ fileLoadingManager = new EnhancedFileLoadingManager(debugLog, {
             
             // Update smart playlist button
             updateSmartPlaylistButton();
-        },
+
+             // ✅ FIX: Update folder metadata after successful load
+    if (folderHandle) {
+        const hasLyrics = newPlaylist.some(t => t.vtt);
+        const hasAnalysis = newPlaylist.some(t => t.analysis || t.hasDeepAnalysis);
         
-        onLoadError: (error) => {
-            playlistStatus.textContent = `Error: ${error.message}`;
-            debugLog(`File loading error: ${error.message}`, 'error');
-        }
+        await folderPersistence.updateMetadata({
+            trackCount: newPlaylist.length,
+            hasLyrics: hasLyrics,
+            hasAnalysis: hasAnalysis,
+            lastAccessed: Date.now()
+        });
+        
+        debugLog(`📁 Folder metadata updated: ${newPlaylist.length} tracks`, 'success');
+    }
+},
+        
     });
     
     debugLog('✅ File Loading Manager initialized', 'success');
@@ -2181,8 +2220,17 @@ async function selectNewFolder(expectedName = null) {
         
         debugLog(`Folder selected: ${handle.name}`, 'success');
         
-        // Save the folder handle
-        await folderPersistence.saveFolderHandle(handle);
+        // ✅ FIX: Save with basic metadata immediately
+        const saveResult = await folderPersistence.saveFolderHandle(handle, {
+            trackCount: 0, // Will be updated after loading
+            hasLyrics: false,
+            hasAnalysis: false,
+            totalSize: 0
+        });
+        
+        if (!saveResult.success) {
+            debugLog(`Failed to save folder: ${saveResult.error}`, 'error');
+        }
         
         // Update global folderHandle
         folderHandle = handle;
@@ -2238,16 +2286,27 @@ async function loadFromFolder() {
         playlistStatus.textContent = 'Failed to load folder';
     }
 }
-        
-        // Initial setup
-        window.addEventListener('load', async () => {
-            // Auto-reload checkbox setup
+
+    // Auto-reload checkbox setup
 const autoReloadCheck = document.getElementById('auto-reload-check');
 const autoReloadLabel = document.getElementById('auto-reload-label');
 
 // Load preference
 const autoReload = localStorage.getItem('autoReloadFolder') !== 'false';
 autoReloadCheck.checked = autoReload;
+        
+        // Initial setup
+        window.addEventListener('load', async () => {
+    // ✅ DEBUG: Check persistence state
+    console.log('=== FOLDER PERSISTENCE DEBUG ===');
+    console.log('Has saved folder (localStorage):', localStorage.getItem('hasSavedFolder'));
+    console.log('Saved folder name:', localStorage.getItem('savedFolderName'));
+    console.log('Auto-reload enabled:', autoReloadCheck.checked);
+    
+    await folderPersistence.initPromise;
+    const loadResult = await folderPersistence.loadFolderHandle();
+    console.log('Loaded from DB:', loadResult);
+    console.log('=== END DEBUG ===');
 
 // Show checkbox if folder is saved
 if (localStorage.getItem('hasSavedFolder') === 'true') {  // ✅ CORRECT!
@@ -2258,52 +2317,67 @@ if (localStorage.getItem('hasSavedFolder') === 'true') {  // ✅ CORRECT!
 autoReloadCheck.onchange = () => {
     localStorage.setItem('autoReloadFolder', autoReloadCheck.checked);
 };
-    // NEW: Check if we have a saved folder and auto-load it
 // NEW: Check if we have a saved folder and auto-load it
 if (autoReload && folderPersistence.hasSavedFolder()) {
     debugLog('Checking for saved folder...', 'info');
     
     try {
-    const loadResult = await folderPersistence.loadFolderHandle();
-    
-    if (loadResult && loadResult.handle) {
-        const { handle, metadata } = loadResult;
+        // ✅ CRITICAL: Ensure all systems ready before loading
+        await new Promise(resolve => {
+            if (fileLoadingManager && metadataParser && analyzer) {
+                resolve();
+            } else {
+                // Wait up to 2 seconds for initialization
+                let attempts = 0;
+                const checkInterval = setInterval(() => {
+                    attempts++;
+                    if (fileLoadingManager && metadataParser && analyzer) {
+                        clearInterval(checkInterval);
+                        resolve();
+                    } else if (attempts > 20) {
+                        clearInterval(checkInterval);
+                        resolve(); // Give up and try anyway
+                    }
+                }, 100);
+            }
+        });
         
-        debugLog(`Found saved folder: ${handle.name}`, 'info');
+        await folderPersistence.initPromise;
         
-        // Verify we still have permission
-        const hasPermission = await folderPersistence.verifyFolderPermission(handle);
+        const loadResult = await folderPersistence.loadFolderHandle();
         
-        if (hasPermission.granted) {
-            folderHandle = handle;
-            folderButton.textContent = `📁 ${folderHandle.name} (Click to reload)`;
-            folderButton.classList.add('active');
+        if (loadResult && loadResult.handle) {
+            const { handle, metadata } = loadResult;
             
-            // Update button visibility
-            updateFolderButtons();
+            debugLog(`Found saved folder: ${handle.name}`, 'info');
             
-            // Auto-load the files with delay
-            debugLog('Auto-loading music from saved folder...', 'success');
+            const hasPermission = await folderPersistence.verifyFolderPermission(handle);
             
-            // CRITICAL: Add delay to prevent race conditions
-            setTimeout(async () => {
-                await loadFromFolder();
-            }, 500);
-            
-        } else {
-            debugLog('Permission denied for saved folder', 'warning');
-            folderPersistence.deleteFolderHandle();
-            
-            // Show a notification
-            playlistStatus.textContent = `Previous folder "${handle.name}" needs permission - click "📁 Select Music Folder" to reload`;
+            if (hasPermission.granted) {
+                folderHandle = handle;
+                folderButton.textContent = `📁 ${folderHandle.name} (Click to reload)`;
+                folderButton.classList.add('active');
+                
+                updateFolderButtons();
+                
+                debugLog('Auto-loading music from saved folder...', 'success');
+                
+                // ✅ FIX: Longer delay to ensure everything is ready
+                setTimeout(async () => {
+                    await loadFromFolder();
+                }, 1000); // Increased from 500ms
+                
+            } else {
+                debugLog('Permission denied for saved folder', 'warning');
+                folderPersistence.deleteFolderHandle();
+                
+                playlistStatus.textContent = `Previous folder "${handle.name}" needs permission - click "📁 Select Music Folder" to reload`;
+            }
         }
+    } catch (err) {
+        debugLog(`Error loading saved folder: ${err.message}`, 'error');
+        folderPersistence.deleteFolderHandle();
     }
-} catch (err) {
-    debugLog(`Error loading saved folder: ${err.message}`, 'error');
-    folderPersistence.deleteFolderHandle();
-}
-    analyzer.loadAnalysesFromStorage();
-debugLog('Loaded cached music analysis', 'info');
 }
             
     if (typeof jsmediatags !== 'undefined') {
@@ -3347,67 +3421,81 @@ playlistRenderer.render();
 
 
 // ========== BACKGROUND MUSIC ANALYSIS ==========
+// REPLACE the entire startBackgroundAnalysis function with this:
 async function startBackgroundAnalysis() {
     if (backgroundAnalysisRunning) return;
     if (playlist.length === 0) return;
     
     backgroundAnalysisRunning = true;
-    debugLog('🔍 Starting background analysis...', 'info');
+    debugLog('🔍 Starting parallel background analysis...', 'info');
     
+    // Get tracks that need analysis
+    const needsAnalysis = playlist
+        .map((track, index) => ({ track, index }))
+        .filter(({ track }) => !track.hasDeepAnalysis && !track.analysis);
+    
+    if (needsAnalysis.length === 0) {
+        debugLog('✅ All tracks already analyzed', 'success');
+        backgroundAnalysisRunning = false;
+        return;
+    }
+    
+    debugLog(`📊 Analyzing ${needsAnalysis.length} tracks in parallel...`, 'info');
+    
+    // Process in batches of 3 (parallel)
+    const batchSize = 3;
     let analyzedCount = 0;
     
-    for (let i = 0; i < playlist.length; i++) {
-        const track = playlist[i];
+    for (let i = 0; i < needsAnalysis.length; i += batchSize) {
+        const batch = needsAnalysis.slice(i, i + batchSize);
         
-        // ✅ MODIFIED: Skip if already has deep analysis or any analysis
-        if (track.hasDeepAnalysis || track.analysis) {
-            debugLog(`⏭ Skipping ${track.fileName} (already has analysis)`, 'info');
-            continue;
+        // Process batch in parallel
+        const promises = batch.map(async ({ track, index }) => {
+            try {
+                const response = await fetch(track.audioURL);
+                const blob = await response.blob();
+                const file = new File([blob], track.fileName, { type: 'audio/mpeg' });
+                
+                const analysis = await analyzer.analyzeTrack(file, track.fileName);
+                
+                // Save to playlist
+                playlist[index].analysis = analysis;
+                analyzedCount++;
+                
+                // Update visualizer if this is the current track
+                if (index === currentTrackIndex) {
+                    visualizerManager.setTrackAnalysis(analysis);
+                    debugLog('🎨 Current track visualizer upgraded!', 'success');
+                }
+                
+                return { success: true, index };
+            } catch (err) {
+                debugLog(`Analysis failed for ${track.fileName}: ${err.message}`, 'error');
+                return { success: false, index };
+            }
+        });
+        
+        // Wait for batch to complete
+        await Promise.all(promises);
+        
+        // Update UI after each batch
+        playlistRenderer.setPlaylist(playlist, currentTrackIndex);
+        playlistRenderer.render();
+        
+        // Save progress every batch
+        if (analyzedCount % batchSize === 0) {
+            analyzer.saveAnalysesToStorage();
+            debugLog(`💾 Saved ${analyzedCount}/${needsAnalysis.length} analyses`, 'info');
         }
         
-        try {
-            // Convert audio URL to blob to file
-            const response = await fetch(track.audioURL);
-            const blob = await response.blob();
-            const file = new File([blob], track.fileName, { type: 'audio/mpeg' });
-            
-            // Analyze
-            const analysis = await analyzer.analyzeTrack(file, track.fileName);
-            
-            // Save to playlist
-            playlist[i].analysis = analysis;
-            analyzedCount++;
-            
-            // Update visualizer if this is the current track
-            if (i === currentTrackIndex) {
-                visualizerManager.setTrackAnalysis(analysis);
-                debugLog('🎨 Current track visualizer upgraded!', 'success');
-            }
-            
-            // Update playlist display to show mood colors
-            playlistRenderer.setPlaylist(playlist, currentTrackIndex);
-playlistRenderer.render();
-            
-            // Save every 5 tracks
-            if (analyzedCount % 5 === 0) {
-                analyzer.saveAnalysesToStorage();
-                debugLog(`💾 Saved ${analyzedCount} analyses`, 'info');
-            }
-            
-            // Throttle to avoid lag (analyze 1 track per second)
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            
-        } catch (err) {
-            debugLog(`Analysis failed for ${track.fileName}: ${err.message}`, 'error');
-        }
+        // Small delay between batches to avoid blocking UI
+        await new Promise(resolve => setTimeout(resolve, 500));
     }
     
     // Final save
     if (analyzedCount > 0) {
         analyzer.saveAnalysesToStorage();
         debugLog(`✅ Background analysis complete! ${analyzedCount} tracks analyzed`, 'success');
-    } else {
-        debugLog(`✅ No background analysis needed - all tracks have deep analysis!`, 'success');
     }
     
     backgroundAnalysisRunning = false;
