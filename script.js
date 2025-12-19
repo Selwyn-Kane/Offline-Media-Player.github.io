@@ -1504,6 +1504,16 @@ fileLoadingManager = new EnhancedFileLoadingManager(debugLog, {
         debugLog(`📁 Folder metadata updated: ${newPlaylist.length} tracks`, 'success');
     }
 },
+        onProgressiveUpdate: (update) => {
+    if (update.phase === 1) {
+      // Playlist ready! Show immediately
+      playlistRenderer.setPlaylist(update.playlist, 0);
+      playlistRenderer.render();
+    } else if (update.phase === 2) {
+      // Track metadata loaded - update display
+      playlistRenderer.render();
+    }
+  }
         
     });
     
