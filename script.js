@@ -170,20 +170,22 @@ if (window.backgroundAudioHandler) {
 }
 
     // Initialize volume control
-    volumeControl = new VolumeControl(player, debugLog);
-
-    // ✅ ADD THIS: Queue reconnection for after audio context init
+volumeControl = new VolumeControl(player, debugLog);
 window.volumeControlInitialized = true;
 
-// ✅ ADD THIS: If audio context exists, reconnect immediately
+// ✅ NEW: Smart reconnection system
 if (audioContext && window.volumeGainNode) {
-    setTimeout(() => {
-        const success = reconnectAudioChainWithVolumeControl();
-        if (!success) {
-            // Retry after 500ms if it failed
-            setTimeout(() => reconnectAudioChainWithVolumeControl(), 500);
-        }
-    }, 100);
+    // Audio context exists - try immediate connection
+    const success = reconnectAudioChainWithVolumeControl();
+    if (!success) {
+        // Retry after short delay
+        setTimeout(() => volumeControl.forceReconnect(), 500);
+    }
+} else {
+    // Audio context will be created later - set up listener
+    document.addEventListener('audioContextReady', () => {
+        setTimeout(() => volumeControl.forceReconnect(), 100);
+    }, { once: true });
 }
 
     // Initialize custom background manager
@@ -556,6 +558,13 @@ function setupAudioContext() {
     if (audioContext) {
         console.log('✅ Audio context already exists - skipping recreation');
         
+        // ✅ NEW: Notify that audio context is ready (if not already notified)
+        if (!window.audioContextReadyFired) {
+            window.audioContextReadyFired = true;
+            document.dispatchEvent(new CustomEvent('audioContextReady'));
+            debugLog('📡 audioContextReady event fired', 'info');
+        }
+        
         // ✅ FIX: Create managers if they don't exist (PWA mode fix)
         if (!audioPresetsManager && bassFilter && midFilter && trebleFilter) {
             try {
@@ -563,6 +572,11 @@ function setupAudioContext() {
                 audioPresetsManager.loadSavedPreset();
                 debugLog('✅ Audio presets manager initialized (late)', 'success');
                 populatePresetDropdown();
+                if (audioContext && !window.audioContextReadyFired) {
+            window.audioContextReadyFired = true;
+            document.dispatchEvent(new CustomEvent('audioContextReady'));
+            debugLog('📡 audioContextReady event fired', 'info');
+        }
             } catch (err) {
                 debugLog(`⚠️ Failed to init presets manager: ${err.message}`, 'warning');
             }

@@ -98,57 +98,124 @@ class VolumeControl {
     }
     
 /**
- * Initialize audio nodes and connect them properly
- * âœ… FIX: Use existing audio chain from script.js instead of creating new source
+ * ✅ ENHANCED: Initialize audio nodes with robust error handling and auto-reconnection
+ * This version creates the nodes AND attempts to integrate them into the existing chain
  */
 initAudioNodes() {
-    if (this.isAudioContextInitialized) return;
+    if (this.isAudioContextInitialized) {
+        this.debugLog('Audio nodes already initialized', 'info');
+        return true;
+    }
     
     try {
-        // âœ… CRITICAL FIX: Use audio context from script.js
+        // Step 1: Get or wait for audio context
         this.audioContext = window.audioContext || window.sharedAudioContext;
         
         if (!this.audioContext) {
-            this.debugLog('AudioContext not yet created by script.js', 'warn');
-            return;
+            this.debugLog('⏳ AudioContext not ready yet - will retry on next interaction', 'warning');
+            return false;
         }
         
-        // Resume context if suspended
+        // Step 2: Resume context if suspended (critical for PWA/mobile)
         if (this.audioContext.state === 'suspended') {
-            this.audioContext.resume();
+            this.audioContext.resume().then(() => {
+                this.debugLog('✅ AudioContext resumed', 'success');
+            }).catch(err => {
+                this.debugLog(`⚠️ Failed to resume AudioContext: ${err.message}`, 'warning');
+            });
         }
         
-        // âœ… FIX: Don't create source - it already exists in script.js
-        // We'll insert our nodes into the existing chain
-        
-        // Create gain node for volume control and boost
+        // Step 3: Create gain node (volume + boost control)
         this.gainNode = this.audioContext.createGain();
         const initialGain = this.baseVolume * (this.boostEnabled ? this.boostAmount : 1.0);
         this.gainNode.gain.value = initialGain;
         
-        // Create compressor with settings optimized to prevent clipping
+        // Step 4: Create compressor (prevent clipping, especially with boost)
         this.compressor = this.audioContext.createDynamicsCompressor();
-        this.compressor.threshold.setValueAtTime(-10, this.audioContext.currentTime); // âœ… Changed from -24
-        this.compressor.knee.setValueAtTime(20, this.audioContext.currentTime);      // âœ… Changed from 30
-        this.compressor.ratio.setValueAtTime(20, this.audioContext.currentTime);      // âœ… Changed from 12
-        this.compressor.attack.setValueAtTime(0.001, this.audioContext.currentTime);  // âœ… Faster attack
-        this.compressor.release.setValueAtTime(0.1, this.audioContext.currentTime);   // âœ… Faster release
         
-        // âœ… CRITICAL: Create makeup gain to compensate for compression
+        // Optimized settings to prevent distortion while maintaining dynamics
+        this.compressor.threshold.setValueAtTime(-10, this.audioContext.currentTime);
+        this.compressor.knee.setValueAtTime(20, this.audioContext.currentTime);
+        this.compressor.ratio.setValueAtTime(20, this.audioContext.currentTime);
+        this.compressor.attack.setValueAtTime(0.001, this.audioContext.currentTime);
+        this.compressor.release.setValueAtTime(0.1, this.audioContext.currentTime);
+        
+        // Step 5: Create makeup gain (compensate for compression reduction)
         this.makeupGain = this.audioContext.createGain();
-        this.makeupGain.gain.value = 1.2; // Compensate for compression reduction
+        this.makeupGain.gain.value = 1.2;
         
-        // Store references globally for script.js to use
+        // Step 6: Store globally for script.js access
         window.volumeGainNode = this.gainNode;
         window.volumeCompressor = this.compressor;
         window.volumeMakeupGain = this.makeupGain;
         
         this.isAudioContextInitialized = true;
         
-        this.debugLog('ðŸŽšï¸ Volume control nodes created - awaiting chain connection', 'success');
+        this.debugLog('✅ Volume control nodes created successfully', 'success');
+        
+        // Step 7: Attempt automatic chain integration (non-blocking)
+        this.attemptChainIntegration();
+        
+        return true;
+        
     } catch (err) {
-        this.debugLog(`Failed to initialize audio nodes: ${err.message}`, 'error');
+        this.debugLog(`❌ Failed to initialize audio nodes: ${err.message}`, 'error');
+        this.isAudioContextInitialized = false;
+        return false;
     }
+}
+
+/**
+ * ✅ NEW: Attempt to integrate volume nodes into existing audio chain
+ * This runs asynchronously and retries if the chain isn't ready yet
+ */
+attemptChainIntegration() {
+    // Check if script.js has the reconnection function
+    if (typeof reconnectAudioChainWithVolumeControl === 'function') {
+        // Try immediate connection
+        const success = reconnectAudioChainWithVolumeControl();
+        
+        if (success) {
+            this.debugLog('🔗 Volume control integrated into audio chain', 'success');
+        } else {
+            // Retry after a delay
+            this.debugLog('⏳ Audio chain not ready - scheduling retry...', 'info');
+            setTimeout(() => {
+                const retrySuccess = reconnectAudioChainWithVolumeControl();
+                if (retrySuccess) {
+                    this.debugLog('🔗 Volume control integrated (retry successful)', 'success');
+                } else {
+                    this.debugLog('⚠️ Volume control nodes created but not yet connected', 'warning');
+                }
+            }, 1000);
+        }
+    } else {
+        // Fallback: just log that nodes are ready
+        this.debugLog('💡 Volume nodes ready - awaiting manual chain connection', 'info');
+    }
+}
+
+/**
+ * ✅ NEW: Force reconnection of audio chain
+ * Call this manually if audio system is initialized after volume control
+ * @returns {boolean} True if reconnection succeeded
+ */
+forceReconnect() {
+    if (!this.isAudioContextInitialized) {
+        this.debugLog('❌ Cannot reconnect - audio nodes not initialized', 'error');
+        return false;
+    }
+    
+    if (typeof reconnectAudioChainWithVolumeControl === 'function') {
+        const success = reconnectAudioChainWithVolumeControl();
+        if (success) {
+            this.debugLog('🔗 Audio chain manually reconnected', 'success');
+            return true;
+        }
+    }
+    
+    this.debugLog('❌ Manual reconnection failed', 'error');
+    return false;
 }
     
     /**
