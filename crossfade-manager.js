@@ -206,7 +206,7 @@ class CrossfadeManager {
      * Preload next track audio data
      */
     async preloadNextTrack(track) {
-        if (!track || !track.audioURL) {
+        if (!track || (!track.audioURL && !track.file)) {
             return false;
         }
         
@@ -217,9 +217,16 @@ class CrossfadeManager {
                 this.preloadBlob = null;
             }
             
-            // Fetch and store
-            const response = await fetch(track.audioURL);
-            const blob = await response.blob();
+            let blob;
+            if (track.file) {
+                // If we have the file object, use it directly
+                blob = track.file;
+            } else {
+                // Fetch and store
+                const response = await fetch(track.audioURL);
+                blob = await response.blob();
+            }
+
             this.preloadBlob = URL.createObjectURL(blob);
             this.nextTrackPreloaded = track;
             

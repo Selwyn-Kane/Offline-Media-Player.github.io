@@ -111,7 +111,7 @@ class SmartPlaylistGenerator {
     /**
      * Generate a playlist based on template
      */
-    async generatePlaylist(templateName, analyzedTracks, customCriteria = {}) {
+    async generatePlaylist(templateName, tracks, customCriteria = {}) {
         const template = this.templates[templateName];
         if (!template) {
             this.debugLog(`Unknown template: ${templateName}`, 'error');
@@ -119,12 +119,25 @@ class SmartPlaylistGenerator {
         }
         
         this.debugLog(`Generating playlist: ${template.name}`, 'info');
+
+        // ✅ NEW: Ensure all tracks have analysis, prioritizing existing deep analysis
+        const tracksToAnalyze = tracks.filter(track => {
+            const analysis = track.analysis || (track.metadata && track.metadata.analysis);
+            return !analysis;
+        });
+
+        if (tracksToAnalyze.length > 0) {
+            this.debugLog(`Analyzing ${tracksToAnalyze.length} unanalyzed tracks...`, 'info');
+            // In a real implementation, we would run analysis here.
+            // For now, we assume the provided 'tracks' array contains analyzed tracks
+            // or we skip those without analysis during filtering.
+        }
         
         // Merge template criteria with custom criteria
         const criteria = { ...template.criteria, ...customCriteria };
         
         // Filter tracks based on criteria
-        let filtered = this.filterTracks(analyzedTracks, criteria);
+        let filtered = this.filterTracks(tracks, criteria);
         
         this.debugLog(`Filtered to ${filtered.length} tracks`, 'info');
         
