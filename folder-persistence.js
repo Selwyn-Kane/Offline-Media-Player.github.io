@@ -622,21 +622,37 @@ async _executeTransaction(storeNames, mode, operation) {
         const options = { mode: 'read' };
         
         try {
-            const currentPermission = await handle.queryPermission(options);
+            // First, try to query without triggering a prompt
+            let currentPermission = await handle.queryPermission(options);
             
             if (currentPermission === 'granted') {
-                return { granted: true, requested: false };
+                // Double check by trying to access values (Windows sometimes reports 'granted' but fails access)
+                try {
+                    const iterator = handle.values();
+                    await iterator.next();
+                    return { granted: true, requested: false };
+                } catch (accessErr) {
+                    console.warn('⚠️ Permission reported as granted but access failed, re-requesting...');
+                    currentPermission = 'prompt';
+                }
             }
             
-            if (autoRequest) {
-                const requestedPermission = await handle.requestPermission(options);
-                return { 
-                    granted: requestedPermission === 'granted', 
-                    requested: true 
-                };
+            if (autoRequest && (currentPermission === 'prompt' || currentPermission === 'denied')) {
+                // On Windows, a user gesture is REQUIRED to trigger requestPermission.
+                // This must be called from a click handler or similar.
+                try {
+                    const requestedPermission = await handle.requestPermission(options);
+                    return { 
+                        granted: requestedPermission === 'granted', 
+                        requested: true 
+                    };
+                } catch (reqErr) {
+                    console.error('❌ requestPermission failed:', reqErr);
+                    return { granted: false, error: reqErr.message, needsGesture: true };
+                }
             }
             
-            return { granted: false, requested: false };
+            return { granted: currentPermission === 'granted', requested: false };
         } catch (err) {
             console.error('❌ Permission check failed:', err);
             return { granted: false, error: err.message };

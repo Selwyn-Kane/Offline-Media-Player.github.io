@@ -21,6 +21,7 @@
         color: #ddd; 
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         padding: 20px;
+        overflow-x: hidden; /* Prevent horizontal scroll from sidebar */
     }
     
     h1 { 
@@ -2584,21 +2585,19 @@ body h1 {
 @media (max-width: 768px) {
     #sidebar {
         position: fixed;
-        left: 0;
+        left: -280px; /* Start off-screen */
         top: 0;
         height: 100vh;
-        width: 0 !important;
-        visibility: hidden;
-        opacity: 0;
-        transition: width 0.3s ease, visibility 0.3s ease, opacity 0.3s ease;
+        width: 280px !important;
+        visibility: visible;
+        opacity: 1;
+        transition: left 0.3s ease;
         z-index: 9000;
         overflow-x: hidden;
     }
     
     #sidebar:not(.collapsed) {
-        width: 280px !important;
-        visibility: visible;
-        opacity: 1;
+        left: 0; /* Slide in */
         box-shadow: 5px 0 20px rgba(0, 0, 0, 0.8);
     }
     

@@ -936,6 +936,13 @@ class EnhancedFileLoadingManager {
         const files = [];
         
         try {
+            // Check if folderHandle is actually a FileList (fallback for mobile)
+            if (folderHandle instanceof FileList || Array.isArray(folderHandle)) {
+                this.debugLog('📱 Using file list fallback for mobile folder loading', 'info');
+                return await this.loadFiles(Array.from(folderHandle));
+            }
+
+            // Standard File System Access API
             for await (const entry of folderHandle.values()) {
                 if (entry.kind === 'file') {
                     try {
@@ -957,8 +964,40 @@ class EnhancedFileLoadingManager {
             
         } catch (error) {
             this.debugLog(`Error scanning folder: ${error.message}`, 'error');
+            
+            // If it failed and we're on mobile, try to trigger the fallback
+            if (this.isMobile) {
+                this.debugLog('🔄 Attempting mobile fallback...', 'warning');
+                return this.triggerMobileFolderFallback();
+            }
             throw error;
         }
+    }
+
+    triggerMobileFolderFallback() {
+        return new Promise((resolve) => {
+            let input = document.getElementById('mobile-folder-fallback');
+            if (!input) {
+                input = document.createElement('input');
+                input.id = 'mobile-folder-fallback';
+                input.type = 'file';
+                input.webkitdirectory = true;
+                input.directory = true;
+                input.style.display = 'none';
+                document.body.appendChild(input);
+            }
+
+            input.onchange = async (e) => {
+                if (e.target.files.length > 0) {
+                    const result = await this.loadFiles(Array.from(e.target.files));
+                    resolve(result);
+                } else {
+                    resolve({ success: false, error: 'No files selected' });
+                }
+            };
+
+            input.click();
+        });
     }
     
     // ========== FILE INPUT HELPERS ==========

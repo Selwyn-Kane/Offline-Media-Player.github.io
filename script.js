@@ -2088,12 +2088,19 @@ if (clearCacheBtn) {
 // Folder Selection Button Handler (ENHANCED WITH PERSISTENCE)
 const folderButton = document.getElementById('folder-button');
 
-folderButton.onclick = async () => {
-    // Check if File System Access API is supported
-    if (!('showDirectoryPicker' in window)) {
-        uiManager.notify('⚠️ Your browser doesn\'t support folder access. Please use Chrome, Edge, or Opera.', 'warning');
-        return;
-    }
+    folderButton.onclick = async () => {
+        // Check if File System Access API is supported
+        if (!('showDirectoryPicker' in window)) {
+            // Mobile fallback: use the file loading manager's fallback
+            debugLog('📱 Folder picker not supported, using mobile fallback', 'info');
+            try {
+                await fileLoadingManager.triggerMobileFolderFallback();
+                uiManager.notify('Folder loaded successfully!', 'success');
+            } catch (err) {
+                debugLog(`Mobile fallback failed: ${err.message}`, 'error');
+            }
+            return;
+        }
     
     try {
         // Check if we have folder history
@@ -2283,6 +2290,16 @@ function closeFolderHistoryModal() {
 
 async function selectNewFolder(expectedName = null) {
     try {
+        // Fallback for mobile/unsupported browsers
+        if (!('showDirectoryPicker' in window)) {
+            debugLog('📱 Using mobile folder selection fallback', 'info');
+            const result = await fileLoadingManager.triggerMobileFolderFallback();
+            if (result && result.success) {
+                uiManager.notify('Folder loaded successfully!', 'success');
+            }
+            return;
+        }
+
         debugLog('Requesting folder access...', 'info');
         
         // Ask user to select a folder
