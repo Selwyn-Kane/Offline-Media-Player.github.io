@@ -420,31 +420,17 @@ renderAllItems() {
     this.playlistItems.innerHTML = '';
     this.playlistItems.appendChild(fragment);
     
-    // 🔥 FIX: Force immediate image loading
+    // 🔥 FIX: Ensure all images are loaded correctly
     requestAnimationFrame(() => {
-        const images = this.playlistItems.querySelectorAll('img[data-src], .playlist-item-thumbnail img');
+        const images = this.playlistItems.querySelectorAll('.playlist-item-thumbnail img');
         
         images.forEach(img => {
             const dataSrc = img.getAttribute('data-src');
-            const currentSrc = img.getAttribute('src');
-            
-            // Load from data-src if it exists
-            if (dataSrc && dataSrc !== currentSrc) {
+            if (dataSrc) {
                 img.src = dataSrc;
                 img.removeAttribute('data-src');
-                console.log('✅ Loaded image:', dataSrc.substring(0, 50));
-            }
-            // If src is already set but image hasn't loaded, force reload
-            else if (currentSrc && !img.complete) {
-                const temp = img.src;
-                img.src = '';
-                img.src = temp;
             }
         });
-        
-        if (images.length > 0) {
-            console.log(`✅ Processed ${images.length} album art images`);
-        }
     });
 }
     
@@ -551,10 +537,10 @@ renderAllItems() {
         
 // Thumbnail
 let thumbnailHTML;
-if (track.metadata?.optimizedImage || track.metadata?.image) {
-    // Use data-src for lazy loading via Intersection Observer
-    const imageSrc = track.metadata.optimizedImage || track.metadata.image;
-    thumbnailHTML = `<img data-src="${imageSrc}" alt="Album art" style="width: 100%; height: 100%; object-fit: cover; border-radius: 5px; background: rgba(255,255,255,0.1);">`;
+const imageSrc = track.metadata?.optimizedImage || track.metadata?.image;
+if (imageSrc) {
+    // Use data-src for small playlists to avoid blocking UI, or src for direct loading
+    thumbnailHTML = `<img src="${imageSrc}" alt="Album art" style="width: 100%; height: 100%; object-fit: cover; border-radius: 5px; background: rgba(255,255,255,0.1);">`;
 } else {
     thumbnailHTML = `<span class="playlist-item-placeholder">🎵</span>`;
 }

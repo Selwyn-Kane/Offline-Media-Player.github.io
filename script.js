@@ -1112,7 +1112,7 @@ if (jumpToCurrentBtn) {
     cues = [];
     
     // Display metadata
-    displayMetadata(track.metadata);
+    displayMetadata(playlist[index].metadata || { title: playlist[index].fileName, artist: 'Unknown Artist', album: 'Unknown Album' });
 
            // 🎵 Update background handler metadata
     if (backgroundAudioHandler) {
@@ -1152,23 +1152,43 @@ if (!dataArray && analyser) {
 }
 
     // Load audio using stored URL (with buffer manager optimization)
+    const loadTrackIndex = index; // Closure for async load
     if (audioBufferManager) {
-        audioBufferManager.getBuffer(currentTrackIndex).then(buffer => {
+        // Clear previous buffer URL if it exists to prevent memory leaks and state confusion
+        if (player.src && player.src.startsWith('blob:')) {
+            URL.revokeObjectURL(player.src);
+        }
+
+        audioBufferManager.getBuffer(loadTrackIndex).then(buffer => {
+            // Ensure we are still on the same track after the async buffer load
+            if (currentTrackIndex !== loadTrackIndex) {
+                debugLog('Track index changed during buffer load, ignoring result', 'warning');
+                return;
+            }
+
             // Create a temporary blob URL for the buffer
-            const blob = new Blob([buffer], { type: 'audio/mpeg' }); // Adjust type if needed
+            const blob = new Blob([buffer], { type: 'audio/mpeg' });
             const bufferUrl = URL.createObjectURL(blob);
             player.src = bufferUrl;
-            debugLog('Audio source set from buffer manager', 'success');
+            player.load(); // Required after setting src
+            debugLog(`Audio source set from buffer manager for track ${loadTrackIndex}`, 'success');
             
+            // Start playback
+            player.play().catch(e => debugLog(`Playback start failed: ${e.message}`, 'warning'));
+
             // Preload upcoming tracks
-            audioBufferManager.preloadUpcoming(currentTrackIndex);
+            audioBufferManager.preloadUpcoming(loadTrackIndex);
         }).catch(err => {
             debugLog(`Buffer manager failed, falling back to original URL: ${err.message}`, 'warning');
             player.src = track.audioURL;
+            player.load();
+            player.play().catch(e => debugLog(`Fallback playback failed: ${e.message}`, 'warning'));
         });
     } else {
         player.src = track.audioURL;
+        player.load();
         debugLog('Audio source set');
+        player.play().catch(e => debugLog(`Standard playback failed: ${e.message}`, 'warning'));
     }
 
     // Load VTT with MANUAL parsing
@@ -1191,18 +1211,14 @@ playlistRenderer.updateHighlight(currentTrackIndex);
 prevButton.disabled = false;
 nextButton.disabled = false;
 
-// Start playback immediately (don't wait for lyrics)
-player.load();
-player.play().then(() => {
-    // Setup visualizer on first play
-    if (!audioContext) {
-        setupAudioContext();
-    } else if (audioContext.state === 'suspended') {
-        audioContext.resume();
-    }
-}).catch(e => debugLog(`Playback prevented: ${e.message}`, 'warning'));
+// Ensure audio context is ready
+if (!audioContext) {
+    setupAudioContext();
+} else if (audioContext.state === 'suspended') {
+    audioContext.resume();
+}
 
-    updateMediaSession();
+updateMediaSession();
     playlistRenderer.updateJumpButton();
 // Start crossfade monitoring AFTER metadata loads
 if (crossfadeManager && crossfadeManager.enabled && currentTrackIndex + 1 < playlist.length) {
