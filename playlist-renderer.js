@@ -551,9 +551,10 @@ renderAllItems() {
         
 // Thumbnail
 let thumbnailHTML;
-if (track.metadata?.image) {
+if (track.metadata?.optimizedImage || track.metadata?.image) {
     // Use data-src for lazy loading via Intersection Observer
-    thumbnailHTML = `<img data-src="${track.metadata.image}" alt="Album art" style="width: 100%; height: 100%; object-fit: cover; border-radius: 5px; background: rgba(255,255,255,0.1);">`;
+    const imageSrc = track.metadata.optimizedImage || track.metadata.image;
+    thumbnailHTML = `<img data-src="${imageSrc}" alt="Album art" style="width: 100%; height: 100%; object-fit: cover; border-radius: 5px; background: rgba(255,255,255,0.1);">`;
 } else {
     thumbnailHTML = `<span class="playlist-item-placeholder">🎵</span>`;
 }

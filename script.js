@@ -49,7 +49,9 @@ let canvasCtx = null;
 let currentDominantColor = null;
 let crossfadeManager = null;
 let autoEQManager = null;
-let djModeManager = null;
+	let djModeManager = null;
+	let imageOptimizer = null;
+	let audioBufferManager = null;
 
 // Color extraction cache (CRITICAL - was missing!)
 const colorCache = new Map();
@@ -136,8 +138,13 @@ folderPersistence.getStats().then(stats => {
         const midValue = document.getElementById('mid-value');
         const trebleValue = document.getElementById('treble-value');
         const eqResetBtn = document.getElementById('eq-reset');
-        const perfManager = new PerformanceManager(debugLog);
-        debugLog('✅ Advanced performance manager initialized', 'success');
+	    const perfManager = new PerformanceManager(debugLog);
+	    debugLog('✅ Advanced performance manager initialized', 'success');
+
+	    // Initialize optimization modules
+	    imageOptimizer = new ImageOptimizer(debugLog);
+	    audioBufferManager = new AudioBufferManager(debugLog);
+	    debugLog('✅ Performance optimization modules initialized', 'success');
 
 // Display performance stats in debug mode
 if (debugMode) {
@@ -1144,9 +1151,25 @@ if (!dataArray && analyser) {
     debugLog('✅ Recreated dataArray for visualizer', 'info');
 }
 
-    // Load audio using stored URL
-    player.src = track.audioURL;
-    debugLog('Audio source set');
+    // Load audio using stored URL (with buffer manager optimization)
+    if (audioBufferManager) {
+        audioBufferManager.getBuffer(currentTrackIndex).then(buffer => {
+            // Create a temporary blob URL for the buffer
+            const blob = new Blob([buffer], { type: 'audio/mpeg' }); // Adjust type if needed
+            const bufferUrl = URL.createObjectURL(blob);
+            player.src = bufferUrl;
+            debugLog('Audio source set from buffer manager', 'success');
+            
+            // Preload upcoming tracks
+            audioBufferManager.preloadUpcoming(currentTrackIndex);
+        }).catch(err => {
+            debugLog(`Buffer manager failed, falling back to original URL: ${err.message}`, 'warning');
+            player.src = track.audioURL;
+        });
+    } else {
+        player.src = track.audioURL;
+        debugLog('Audio source set');
+    }
 
     // Load VTT with MANUAL parsing
     if (track.vtt) {
@@ -1459,14 +1482,19 @@ fileLoadingManager = new EnhancedFileLoadingManager(debugLog, {
             player.src = '';
             currentTrackIndex = -1;
             
-            // Set new playlist
-            playlist = newPlaylist;
-            currentTrackIndex = 0;
-            
-            debugLog(`Playlist created with ${playlist.length} tracks`, 'success');
-            
-            updatePlaylistStatus();
-            playlistRenderer.setPlaylist(playlist, currentTrackIndex);
+	            // Set new playlist
+	            playlist = newPlaylist;
+	            currentTrackIndex = 0;
+	            
+	            debugLog(`Playlist created with ${playlist.length} tracks`, 'success');
+	            
+	            // Set playlist in buffer manager
+	            if (audioBufferManager) {
+	                audioBufferManager.setPlaylist(playlist);
+	            }
+	            
+	            updatePlaylistStatus();
+	            playlistRenderer.setPlaylist(playlist, currentTrackIndex);
             playlistRenderer.render();
             
             // Load first track
@@ -1656,6 +1684,11 @@ clearButton.onclick = () => {
     if (confirm('Clear entire playlist? This will stop playback and remove all loaded tracks.')) {
         // Use the manager's cleanup method
         fileLoadingManager.cleanupPlaylist(playlist);
+        
+        // Clear buffer manager
+        if (audioBufferManager) {
+            audioBufferManager.clearAllBuffers();
+        }
         
         playlist = [];
         currentTrackIndex = -1;

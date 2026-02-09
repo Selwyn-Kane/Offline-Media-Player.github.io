@@ -28,6 +28,7 @@ class EnhancedFileLoadingManager {
         this.customMetadataStore = null;
         this.analyzer = null;
         this.workerManager = null;
+        this.imageOptimizer = null;
         
         // Mobile-optimized configuration
         this.config = {
@@ -202,6 +203,7 @@ class EnhancedFileLoadingManager {
         this.customMetadataStore = dependencies.customMetadataStore;
         this.analyzer = dependencies.analyzer;
         this.workerManager = dependencies.workerManager || window.workerManager;
+        this.imageOptimizer = dependencies.imageOptimizer || window.imageOptimizer;
         
         this.debugLog('✅ Mobile-Optimized File Loading Manager v3.0 initialized', 'success');
     }
@@ -320,6 +322,7 @@ class EnhancedFileLoadingManager {
                 loadedAt: Date.now(),
                 _needsProcessing: true,
                 _audioFile: audioFile,
+                file: audioFile, // Store File object for buffer manager
                 _matches: matches
             };
         });
@@ -780,6 +783,7 @@ class EnhancedFileLoadingManager {
             audioURL: audioURL,
             fileName: audioFile.name,
             fileSize: audioFile.size,
+            file: audioFile, // Store File object for buffer manager
             vtt: matches.vtt || null,
             metadata: metadata,
             duration: duration,
@@ -849,6 +853,18 @@ class EnhancedFileLoadingManager {
                     hasMetadata: true,
                     isCustom: true
                 };
+            }
+        }
+        
+        // Optimize image if available
+        if (metadata.image && this.imageOptimizer) {
+            try {
+                metadata.optimizedImage = await this.imageOptimizer.optimizeImage(
+                    metadata.image,
+                    'thumbnail'
+                );
+            } catch (err) {
+                this.debugLog(`Image optimization failed for ${audioFile.name}`, 'warning');
             }
         }
         
