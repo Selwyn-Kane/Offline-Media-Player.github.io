@@ -41,7 +41,7 @@ class EnhancedFileLoadingManager {
             fuzzyMatchThreshold: options.fuzzyMatchThreshold || 0.8,
             // Mobile: smaller chunks
             chunkSize: this.isMobile ? 3 : (options.chunkSize || 5),
-            enableCaching: options.enableCaching !== false,
+            enableCaching: false, // Force disabled as per user request
             maxCacheAge: options.maxCacheAge || 7 * 24 * 60 * 60 * 1000, // 7 days
             // Progressive loading
             progressiveMode: this.isMobile ? true : (options.progressiveMode || false),
@@ -148,70 +148,13 @@ class EnhancedFileLoadingManager {
     }
     
     async _getCachedData(cacheKey) {
-        // Check memory cache first (fastest)
-        if (this.memoryCache.has(cacheKey)) {
-            return this.memoryCache.get(cacheKey);
-        }
-        
-        // Check IndexedDB (persistent)
-        if (!this.dbCache) return null;
-        
-        try {
-            const tx = this.dbCache.transaction('fileCache', 'readonly');
-            const store = tx.objectStore('fileCache');
-            const request = store.get(cacheKey);
-            
-            const result = await new Promise((resolve, reject) => {
-                request.onsuccess = () => resolve(request.result);
-                request.onerror = () => reject(request.error);
-            });
-            
-            if (result && Date.now() - result.timestamp < this.config.maxCacheAge) {
-                // Add to memory cache for faster access
-                this.memoryCache.set(cacheKey, result.data);
-                return result.data;
-            }
-            
-            return null;
-        } catch (err) {
-            this.debugLog(`Cache read error: ${err.message}`, 'error');
-            return null;
-        }
+        // Caching disabled as per user request to ensure fresh metadata on every load
+        return null;
     }
     
     async _setCachedData(cacheKey, data, metadata = {}) {
-        // Store in memory cache
-        this.memoryCache.set(cacheKey, data);
-        
-        // Limit memory cache size (mobile optimization)
-        const maxMemoryEntries = this.isMobile ? 20 : 50;
-        if (this.memoryCache.size > maxMemoryEntries) {
-            const firstKey = this.memoryCache.keys().next().value;
-            this.memoryCache.delete(firstKey);
-        }
-        
-        // Store in IndexedDB
-        if (!this.dbCache) return;
-        
-        try {
-            const tx = this.dbCache.transaction('fileCache', 'readwrite');
-            const store = tx.objectStore('fileCache');
-            
-            await new Promise((resolve, reject) => {
-                const request = store.put({
-                    id: cacheKey,
-                    data: data,
-                    timestamp: Date.now(),
-                    fileName: metadata.fileName || '',
-                    size: metadata.size || 0
-                });
-                
-                request.onsuccess = () => resolve();
-                request.onerror = () => reject(request.error);
-            });
-        } catch (err) {
-            this.debugLog(`Cache write error: ${err.message}`, 'error');
-        }
+        // Caching disabled as per user request
+        return;
     }
     
     async _cleanExpiredCache() {

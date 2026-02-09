@@ -9,31 +9,7 @@
     box-sizing: border-box;
 }
 
-/* ... rest of your CSS ... */
-    /* Base Styles */
-    * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-    }
 
-        #mode-indicator {
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        background: rgba(0, 0, 0, 0.9);
-        color: #fff;
-        padding: 20px 40px;
-        border-radius: 10px;
-        font-size: 1.5em;
-        font-weight: bold;
-        z-index: 5000;
-        opacity: 0;  /* ← Change from 1 to 0 */
-        transition: opacity 0.3s ease;
-        display: none;  /* ← Add this line */
-        pointer-events: none;  /* ← Add this line */
-    }
     
     body { 
         display: flex;
@@ -186,21 +162,23 @@
         justify-content: center;
     }
 
-        #mode-indicator {
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        background: rgba(0, 0, 0, 0.9);
-        color: #fff;
-        padding: 20px 40px;
-        border-radius: 10px;
-        font-size: 1.5em;
-        font-weight: bold;
-        z-index: 5000;
-        opacity: 1;
-        transition: opacity 0.3s ease;
-    }
+#mode-indicator {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.9);
+    color: #fff;
+    padding: 20px 40px;
+    border-radius: 10px;
+    font-size: 1.5em;
+    font-weight: bold;
+    z-index: 5000;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    display: none;
+    pointer-events: none;
+}
     
     button { 
         padding: 12px 24px;
@@ -2556,7 +2534,7 @@ body h1 {
 }
 
 /* ========== RESPONSIVE SIDEBAR ========== */
-@@media (max-width: 768px) {
+@media (max-width: 768px) {
     #sidebar {
         width: 0 !important;
         visibility: hidden;
@@ -2582,10 +2560,6 @@ body h1 {
         display: flex;
         align-items: center;
         justify-content: center;
-    }
-}    
-    #main-content {
-        margin-left: 70px;
     }
 }
 

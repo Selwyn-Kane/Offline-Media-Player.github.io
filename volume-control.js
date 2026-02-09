@@ -890,6 +890,19 @@ forceReconnect() {
         return this.boostEnabled;
     }
     
+    setBoost(enabled) {
+        if (!this.isAudioContextInitialized) {
+            this.debugLog('Warning: Audio context not ready, boost may not work', 'warning');
+        }
+        
+        this.boostEnabled = enabled;
+        this.applyVolume(this.baseVolume);
+        this.updateUI();
+        this.debounceSaveSettings();
+        
+        this.debugLog(`Boost ${enabled ? 'enabled' : 'disabled'}`, 'info');
+    }
+    
     /**
      * Get boost amount
      * @returns {number} Boost multiplier

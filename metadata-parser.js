@@ -42,7 +42,13 @@ class MetadataParser {
                     metadata = this.getDefaultMetadata(file);
             }
             
-            this.debugLog(`Metadata extracted - Title: "${metadata.title}", Artist: "${metadata.artist}"`, 'success');
+            // Validate metadata before returning
+            if (!metadata.title) {
+                metadata.title = file.name.replace(/\.[^/.]+$/, '');
+                this.debugLog(`Warning: Title was empty, using filename: ${metadata.title}`, 'warning');
+            }
+            
+            this.debugLog(`Metadata extracted - Title: "${metadata.title}", Artist: "${metadata.artist || 'Unknown'}"`, 'success');
             return metadata;
             
         } catch (err) {
