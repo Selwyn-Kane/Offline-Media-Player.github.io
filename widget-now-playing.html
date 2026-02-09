@@ -120,7 +120,7 @@
         async function sendCommand(action) {
             if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
                 navigator.serviceWorker.controller.postMessage({
-                    type: 'WIDGET_ACTION',
+                    type: 'WIDGET_COMMAND',
                     action: action
                 });
             }
@@ -140,7 +140,7 @@
 
         // Listen for state updates from Service Worker
         navigator.serviceWorker.addEventListener('message', (event) => {
-            if (event.data.type === 'STATE_UPDATE') {
+            if (event.data.type === 'STATE_UPDATE' || event.data.type === 'WIDGET_STATE_UPDATE') {
                 updateWidget(event.data.state);
             }
         });

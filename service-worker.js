@@ -122,6 +122,11 @@ function broadcastToWidgets() {
           type: 'STATE_UPDATE',
           state: currentState
         });
+        // Also send with WIDGET_STATE_UPDATE for compatibility with some widgets
+        client.postMessage({
+          type: 'WIDGET_STATE_UPDATE',
+          state: currentState
+        });
       });
       console.log('[SW] Broadcasted to', clients.length, 'clients');
     });

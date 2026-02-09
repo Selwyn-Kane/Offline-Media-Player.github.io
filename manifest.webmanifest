@@ -36,5 +36,45 @@
         }
       ]
     }
+  ],
+  "widgets": [
+    {
+      "tag": "minimal-widget",
+      "name": "Music Controls",
+      "template": "widget-minimal.html",
+      "ms_ac_template": "widget-minimal-data.json",
+      "data": "widget-minimal-data.json",
+      "type": "application/json",
+      "screenshots": [
+        {
+          "src": "./icon-512.png",
+          "sizes": "512x512",
+          "label": "Music controls widget"
+        }
+      ]
+    },
+    {
+      "tag": "full-widget",
+      "name": "Now Playing",
+      "template": "widget-full.html",
+      "ms_ac_template": "widget-full-data.json",
+      "data": "widget-full-data.json",
+      "type": "application/json",
+      "screenshots": [
+        {
+          "src": "./icon-512.png",
+          "sizes": "512x512",
+          "label": "Now playing widget"
+        }
+      ]
+    },
+    {
+      "tag": "now-playing-widget",
+      "name": "Compact Player",
+      "template": "widget-now-playing.html",
+      "ms_ac_template": "widget-now-playing-ac.json",
+      "data": "widget-now-playing-ac.json",
+      "type": "application/json"
+    }
   ]
 }
