@@ -137,6 +137,13 @@ class ErrorRecovery {
         if (this.errorHistory.length > this.maxHistorySize) {
             this.errorHistory.pop();
         }
+
+        // Notify user of significant errors
+        if (window.uiManager && !errorRecord.transient) {
+            window.uiManager.notify(`Error in ${operationName}: ${error.message}`, 'error');
+        } else if (window.uiManager && errorRecord.transient) {
+            window.uiManager.notify(`Temporary issue: ${error.message}. Retrying...`, 'warning');
+        }
     }
     
     getErrorStats(operationName = null, timeWindow = 300000) {

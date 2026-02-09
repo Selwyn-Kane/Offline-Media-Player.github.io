@@ -52,6 +52,7 @@ let autoEQManager = null;
 	let djModeManager = null;
 	let imageOptimizer = null;
 	let audioBufferManager = null;
+	let uiManager = null;
 
 // Color extraction cache (CRITICAL - was missing!)
 const colorCache = new Map();
@@ -81,6 +82,10 @@ folderPersistence.getStats().then(stats => {
         }
     }
 });
+
+    uiManager = new UIManager(debugLog);
+    window.uiManager = uiManager;
+    debugLog('✅ UI Manager initialized', 'success');
 
     analyzer = new MusicAnalyzer(debugLog);
     generator = new SmartPlaylistGenerator(analyzer, debugLog);
@@ -2086,7 +2091,7 @@ const folderButton = document.getElementById('folder-button');
 folderButton.onclick = async () => {
     // Check if File System Access API is supported
     if (!('showDirectoryPicker' in window)) {
-        alert('⚠️ Your browser doesn\'t support folder access.\n\nPlease use:\n• Chrome 86+\n• Edge 86+\n• Opera 72+\n\nOr use the regular "Load Music & Lyrics" button.');
+        uiManager.notify('⚠️ Your browser doesn\'t support folder access. Please use Chrome, Edge, or Opera.', 'warning');
         return;
     }
     
@@ -2109,7 +2114,7 @@ folderButton.onclick = async () => {
             debugLog('Folder selection cancelled', 'info');
         } else {
             debugLog(`Folder selection failed: ${err.message}`, 'error');
-            alert(`Failed to access folder: ${err.message}`);
+            uiManager.notify(`Failed to access folder: ${err.message}`, 'error');
         }
     }
 };
@@ -2325,7 +2330,7 @@ async function selectNewFolder(expectedName = null) {
             debugLog('Folder selection cancelled', 'info');
         } else {
             debugLog(`Folder selection failed: ${err.message}`, 'error');
-            alert(`Failed to access folder: ${err.message}`);
+            uiManager.notify(`Failed to access folder: ${err.message}`, 'error');
         }
     }
 }
@@ -2354,10 +2359,10 @@ async function loadFromFolder() {
     
     try {
         await fileLoadingManager.loadFromFolderHandle(folderHandle);
-        debugLog('Folder loaded successfully!', 'success');
+        uiManager.notify('Folder loaded successfully!', 'success');
     } catch (err) {
         debugLog(`Error loading folder: ${err.message}`, 'error');
-        alert(`Failed to load folder: ${err.message}\n\nTry selecting the folder again.`);
+        uiManager.notify(`Failed to load folder: ${err.message}`, 'error');
         playlistStatus.textContent = 'Failed to load folder';
     }
 }

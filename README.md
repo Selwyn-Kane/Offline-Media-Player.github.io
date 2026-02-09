@@ -170,15 +170,17 @@
 - **Keyboard Shortcuts**: 15+ shortcuts for efficient control
 
 ### 🔧 System Features
-- **Service Worker**: Offline functionality with cache-first strategy
-- **GitHub Pages Support**: Automatic base path detection and configuration
-- **Folder Handle Persistence**: IndexedDB storage with permission verification
-- **Custom Metadata Storage**: localStorage-based with size/name keys
-- **Analysis Cache**: In-memory caching with localStorage backup
-- **Color Cache**: LRU cache (50 items) for album art colors
-- **Playlist Persistence**: localStorage with timestamp tracking
-- **Auto-Reload Preference**: Remember folder auto-load setting
-- **Error Handling**: Comprehensive error recovery and logging
+- **Modular Architecture:** Cleanly separated components for audio processing, UI management, and file handling.
+- **UI Manager:** Centralized UI interaction system with non-intrusive toast notifications.
+- **Error Recovery System:** Circuit breaker pattern and automatic retries with global error reporting.
+- **Service Worker:** Offline functionality with cache-first strategy.
+- **GitHub Pages Support:** Automatic base path detection and configuration.
+- **Folder Handle Persistence:** IndexedDB storage with permission verification.
+- **Custom Metadata Storage:** localStorage-based with size/name keys.
+- **Analysis Cache:** In-memory caching with localStorage backup.
+- **Color Cache:** LRU cache (50 items) for album art colors.
+- **Playlist Persistence:** localStorage with timestamp tracking.
+- **Auto-Reload Preference:** Remember folder auto-load setting.
 
 ---
 
