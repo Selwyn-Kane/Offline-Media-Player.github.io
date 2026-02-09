@@ -552,8 +552,8 @@ renderAllItems() {
 // Thumbnail
 let thumbnailHTML;
 if (track.metadata?.image) {
-    // 🔥 FIX: Use src directly instead of data-src
-    thumbnailHTML = `<img src="${track.metadata.image}" alt="Album art" style="width: 100%; height: 100%; object-fit: cover; border-radius: 5px;">`;
+    // Use data-src for lazy loading via Intersection Observer
+    thumbnailHTML = `<img data-src="${track.metadata.image}" alt="Album art" style="width: 100%; height: 100%; object-fit: cover; border-radius: 5px; background: rgba(255,255,255,0.1);">`;
 } else {
     thumbnailHTML = `<span class="playlist-item-placeholder">🎵</span>`;
 }
