@@ -800,7 +800,7 @@ class EnhancedFileLoadingManager {
         
         // Check cache
         const cached = await this._getCachedData(cacheKey);
-        if (cached) {
+        if (cached && !this.config.forceRefresh) {
             this._updateProgress(index + 1, total, audioFile.name, true);
             
             return {

@@ -161,7 +161,8 @@ class SmartPlaylistGenerator {
      */
     filterTracks(tracks, criteria) {
         return tracks.filter(track => {
-            const analysis = track.analysis;
+            // Use track.analysis or track.metadata.analysis if available
+            const analysis = track.analysis || (track.metadata && track.metadata.analysis);
             if (!analysis) return false;
             
             // Energy filter

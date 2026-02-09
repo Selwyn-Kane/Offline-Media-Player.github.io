@@ -1013,7 +1013,7 @@ body.sticky-mini {
     margin: 0;
 }
 
-.sticky-mini #controls {
+.sticky-mini #playback-controls {
     position: fixed;
     bottom: 90px;
     left: 50%;
@@ -1024,11 +1024,27 @@ body.sticky-mini {
     border-radius: 50px;
     backdrop-filter: blur(10px);
     border: 1px solid #333;
+    width: auto !important;
+    margin: 0 !important;
 }
 
-.sticky-mini #controls button {
-    padding: 8px 16px;
-    font-size: 12px;
+.sticky-mini #playback-controls .control-btn {
+    width: 40px !important;
+    height: 40px !important;
+    padding: 0 !important;
+}
+
+.sticky-mini #playback-controls .control-btn-play {
+    width: 50px !important;
+    height: 50px !important;
+}
+
+.sticky-mini #playback-controls .control-icon {
+    font-size: 18px !important;
+}
+
+.sticky-mini #playback-controls .control-btn-play .control-icon {
+    font-size: 24px !important;
 }
 
 @keyframes slideInUp {
@@ -1286,27 +1302,83 @@ body.sticky-mini {
 
 @media (orientation: landscape) and (max-height: 600px) {
     /* Landscape phone adjustments */
-    #cover-art-container {
-        width: 100px !important;
-        height: 100px !important;
-        min-width: 100px !important;
+    body {
+        padding: 10px !important;
+        flex-direction: row !important;
+        flex-wrap: wrap !important;
+        justify-content: center !important;
+        align-items: flex-start !important;
     }
-    
+
+    h1 {
+        font-size: 1.2em !important;
+        margin-bottom: 10px !important;
+        width: 100% !important;
+    }
+
     #metadata-container {
-        padding: 10px 15px !important;
-        margin-bottom: 15px !important;
+        width: 45% !important;
+        margin-right: 10px !important;
+        margin-bottom: 10px !important;
+        padding: 10px !important;
+        flex-direction: row !important;
     }
-    
-    #visualizer {
+
+    #cover-art-container {
+        width: 80px !important;
         height: 80px !important;
+        min-width: 80px !important;
+    }
+
+    #info-details .value {
+        font-size: 0.9em !important;
+    }
+
+    #playback-controls {
+        width: 50% !important;
+        margin-bottom: 10px !important;
+        gap: 10px !important;
+    }
+
+    .control-btn {
+        width: 40px !important;
+        height: 40px !important;
+    }
+
+    .control-btn-play {
+        width: 50px !important;
+        height: 50px !important;
+    }
+
+    .control-icon {
+        font-size: 18px !important;
+    }
+
+    #custom-progress-container {
+        width: 90% !important;
+        margin-bottom: 5px !important;
+    }
+
+    #visualizer {
+        height: 60px !important;
+        width: 90% !important;
     }
     
     .lyric-line {
-        font-size: 1.3em !important;
+        font-size: 1.1em !important;
     }
     
     .lyric-line.active {
-        font-size: 1.5em !important;
+        font-size: 1.3em !important;
+    }
+
+    #sidebar {
+        display: none !important; /* Hide sidebar in landscape to save space */
+    }
+
+    #main-content {
+        margin-left: 0 !important;
+        width: 100% !important;
     }
 }
 
@@ -2484,11 +2556,34 @@ body h1 {
 }
 
 /* ========== RESPONSIVE SIDEBAR ========== */
-@media (max-width: 1024px) {
-    #sidebar:not(.collapsed) {
-        width: 280px;
+@@media (max-width: 768px) {
+    #sidebar {
+        width: 0 !important;
+        visibility: hidden;
     }
-    
+    #sidebar:not(.collapsed) {
+        width: 280px !important;
+        visibility: visible;
+    }
+    #main-content {
+        margin-left: 0 !important;
+        width: 100% !important;
+    }
+    #sidebar-toggle {
+        position: fixed;
+        left: 10px;
+        top: 10px;
+        width: 50px;
+        height: 50px;
+        z-index: 9001;
+        background: rgba(26, 26, 26, 0.8);
+        border-radius: 50%;
+        border: 1px solid #dc3545;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+}    
     #main-content {
         margin-left: 70px;
     }

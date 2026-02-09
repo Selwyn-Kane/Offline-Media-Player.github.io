@@ -271,32 +271,33 @@ class CrossfadeManager {
     /**
      * Check if it's time to start fading
      */
-checkFadePoint(player, currentTrack, nextTrack) {
-    if (!this.enabled || this.isFading || !player || !this.scheduledNextTrack) {
-        return;
+    checkFadePoint(player, currentTrack, nextTrack) {
+        if (!this.enabled || this.isFading || !player || !this.scheduledNextTrack) {
+            return;
+        }
+        
+        const currentTime = player.currentTime;
+        const duration = player.duration;
+        
+        if (!duration || isNaN(duration)) {
+            return;
+        }
+
+        // Recalculate fade start time if not set or invalid
+        if (!this.fadeStartTime || isNaN(this.fadeStartTime)) {
+            this.fadeStartTime = this.calculateFadeStartPoint(currentTrack, duration);
+        }
+        
+        if (!this.fadeStartTime || isNaN(this.fadeStartTime)) {
+            return;
+        }
+        
+        // Check if we've reached fade point
+        if (currentTime >= this.fadeStartTime && currentTime < duration - 0.5) {
+            this.debugLog('🎚️ STARTING CROSSFADE', 'success');
+            this.executeFade(player, currentTrack, nextTrack);
+        }
     }
-    
-    // ✅ ADD THIS CHECK:
-    if (!this.fadeStartTime || isNaN(this.fadeStartTime)) {
-        debugLog('⚠️ Invalid fade start time, cancelling monitoring', 'warning');
-        this.stopMonitoring();
-        return;
-    }
-    
-    const currentTime = player.currentTime;
-    const duration = player.duration;
-    
-    // ✅ ADD THIS CHECK:
-    if (!duration || isNaN(duration)) {
-        return;
-    }
-    
-    // Check if we've reached fade point
-    if (currentTime >= this.fadeStartTime && currentTime < duration - 0.5) {
-        this.debugLog('🎚️ STARTING CROSSFADE', 'success');
-        this.executeFade(player, currentTrack, nextTrack);
-    }
-}
     
     /**
      * Execute the actual crossfade

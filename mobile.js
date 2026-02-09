@@ -356,10 +356,15 @@ class MobileOptimizer {
             }
             
             // Force layout recalculation
-            document.body.style.height = `${window.innerHeight}px`;
+            document.body.style.minHeight = `${window.innerHeight}px`;
             
             // Update viewport height CSS variable for responsive sizing
             document.documentElement.style.setProperty('--vh', `${window.innerHeight * 0.01}px`);
+            
+            // Fix for mobile address bar
+            if (this.isMobile) {
+                window.scrollTo(0, 0);
+            }
             
             console.log(`📱 Rotation handled: ${window.innerWidth}x${window.innerHeight}`);
         };

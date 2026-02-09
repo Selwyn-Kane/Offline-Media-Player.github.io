@@ -1894,11 +1894,13 @@ if (volumeBoostButton && volumeControl) {
     };
     
     // Restore state on load
-    if (volumeControl.isBoostEnabled()) {
-        volumeBoostButton.classList.add('active');
-        const label = volumeBoostButton.querySelector('.sidebar-label');
-        if (label) label.textContent = 'Boost On';
-    }
+    setTimeout(() => {
+        if (volumeControl && volumeControl.isBoostEnabled()) {
+            volumeBoostButton.classList.add('active');
+            const label = volumeBoostButton.querySelector('.sidebar-label');
+            if (label) label.textContent = 'Boost On';
+        }
+    }, 500);
 }
 
 // ✅ DJ MODE BUTTON
