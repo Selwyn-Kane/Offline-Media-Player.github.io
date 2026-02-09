@@ -13,6 +13,9 @@ class VisualizerUIController {
         this.controlsHidden = false;
         this.hideTimer = null;
         
+        // Fullscreen helper for cross-browser support
+        this.fullscreenHelper = typeof FullscreenHelper !== 'undefined' ? new FullscreenHelper() : null;
+        
         // UI Elements (will be set during init)
         this.elements = {
             // Fullscreen toggle button
@@ -216,6 +219,13 @@ enterFullscreen() {
     // Show container
     this.elements.container.classList.remove('fullscreen-viz-hidden');
     
+    // Try to use native fullscreen API with cross-browser support
+    if (this.fullscreenHelper) {
+        this.fullscreenHelper.requestFullscreen(this.elements.container).catch(err => {
+            console.warn('Fullscreen API failed, using CSS fallback:', err);
+        });
+    }
+    
     // Resize canvas to full window
     this.elements.canvas.width = window.innerWidth;
     this.elements.canvas.height = window.innerHeight;
@@ -291,6 +301,13 @@ enterFullscreen() {
     
     exitFullscreen() {
         this.fullscreenActive = false;
+        
+        // Exit native fullscreen if active
+        if (this.fullscreenHelper && this.fullscreenHelper.isFullscreenActive()) {
+            this.fullscreenHelper.exitFullscreen().catch(err => {
+                console.warn('Error exiting fullscreen:', err);
+            });
+        }
         
         // Hide container
         if (this.elements.container) {
