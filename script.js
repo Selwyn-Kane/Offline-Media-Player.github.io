@@ -1165,7 +1165,33 @@ if (jumpToCurrentBtn) {
     }
 }
 
-      async function loadTrack(index) {
+    async function handleAutoLyrics(track) {
+        const autoToggle = document.getElementById('auto-lyrics-toggle');
+        
+        // 1. Check if feature is ON
+        if (!autoToggle || !autoToggle.checked) return;
+        
+        // 2. Check if we already have lyrics in the cache
+        const trackId = `${track.metadata?.artist || 'Unknown'}_${track.metadata?.title || track.fileName}`;
+        const cached = await lyricsManager.getLyricsFromDB(trackId);
+        if (cached) return; // Already have them, do nothing
+        
+        // 3. Fetch from internet
+        const artist = track.metadata?.artist || 'Unknown Artist';
+        const title = track.metadata?.title || track.fileName;
+        const lyrics = await lyricsManager.fetchLyricsOnline(artist, title);
+        
+        if (lyrics) {
+            // 4. Save to your existing IndexedDB cache
+            await lyricsManager.saveLyricsToDB(trackId, lyrics);
+            
+            // 5. Load them into the player immediately
+            const parsedCues = vttParser.parseLRC(lyrics);
+            lyricsManager.loadLyrics(parsedCues, trackId);
+        }
+    }
+
+    async function loadTrack(index) {
     if (index < 0 || index >= playlist.length) return;
     currentTrackIndex = index;
     const track = playlist[currentTrackIndex];
@@ -1282,6 +1308,9 @@ if (!dataArray && analyser) {
     } else {
         lyricsManager.clearLyrics();
         debugLog(`VTT file NOT found for ${track.fileName}.`, 'warning');
+        
+        // ✅ NEW: Auto-fetch lyrics if VTT is missing
+        handleAutoLyrics(track);
     }
 
 playlistRenderer.updateHighlight(currentTrackIndex);
@@ -3343,6 +3372,20 @@ const savedCrossfade = localStorage.getItem('crossfadeEnabled') === 'true';
 const savedAutoEQ = localStorage.getItem('autoEQEnabled') === 'true';
 if (savedCrossfade && crossfadeManager) crossfadeManager.setEnabled(true);
 if (savedAutoEQ && autoEQManager) autoEQManager.setEnabled(true);
+
+const autoLyricsToggle = document.getElementById('auto-lyrics-toggle');
+const savedAutoLyrics = localStorage.getItem('autoLyricsEnabled') === 'true';
+
+if (autoLyricsToggle) {
+    autoLyricsToggle.checked = savedAutoLyrics;
+    autoLyricsToggle.onchange = () => {
+        localStorage.setItem('autoLyricsEnabled', autoLyricsToggle.checked);
+        if (autoLyricsToggle.checked) {
+            uiManager.showToast("Auto-Lyrics Enabled (Requires Internet)", "success");
+        }
+    };
+}
+
     // Auto-fetch lyrics button
 const autoLyricsBtn = document.getElementById('auto-lyrics-btn');
 

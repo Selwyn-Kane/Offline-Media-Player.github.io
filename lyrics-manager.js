@@ -1161,6 +1161,56 @@ class LyricsManager {
     // CLEANUP
     // ============================================
     
+    async saveLyricsToDB(trackId, lyrics) {
+        if (!this.db) return;
+        try {
+            const transaction = this.db.transaction(['lyrics'], 'readwrite');
+            const store = transaction.objectStore('lyrics');
+            
+            // Parse LRC to cues if it's a string
+            let cues = lyrics;
+            if (typeof lyrics === 'string') {
+                cues = vttParser.parseLRC(lyrics);
+            }
+
+            store.put({
+                trackId: trackId,
+                cues: cues,
+                timestamp: Date.now()
+            });
+        } catch (e) {
+            this.debugLog('Failed to save lyrics to DB', 'error');
+        }
+    }
+
+    async getLyricsFromDB(trackId) {
+        return this.loadCachedLyrics(trackId);
+    }
+
+    async fetchLyricsOnline(artist, title) {
+        try {
+            this.debugLog(`🔍 Searching online for: ${title} by ${artist}`, 'info');
+
+            // Encode parameters for the URL
+            const url = `https://lrclib.net/api/get?artist=${encodeURIComponent(artist)}&track_name=${encodeURIComponent(title)}`;
+
+            const response = await fetch(url);
+            if (!response.ok) throw new Error('Lyrics not found');
+
+            const data = await response.json();
+
+            // We want synced lyrics (LRC format)
+            if (data.syncedLyrics) {
+                this.debugLog('✅ Synced lyrics found!', 'success');
+                return data.syncedLyrics;
+            }
+            return null;
+        } catch (err) {
+            this.debugLog(`❌ Fetch failed: ${err.message}`, 'error');
+            return null;
+        }
+    }
+
     dispose() {
         if (this.db) {
             this.db.close();
