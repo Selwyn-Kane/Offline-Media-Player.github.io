@@ -422,7 +422,7 @@ enterFullscreen() {
     // ============================================
     
     cycleMode() {
-        const modes = ['bars', 'circular', 'waveform', 'particles'];
+        const modes = ['bars', 'circular', 'waveform', 'particles', 'nebula', '3dwave'];
         const currentMode = this.manager.vizMode;
         const currentIndex = modes.indexOf(currentMode);
         const nextMode = modes[(currentIndex + 1) % modes.length];

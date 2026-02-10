@@ -32,6 +32,8 @@ let bufferLength = null;
 let visualizerAnimationId = null;
 let visualizerEnabled = true;
 let volumeControl = null;
+let visualizerManager = typeof VisualizerManager !== 'undefined' ? new VisualizerManager() : null;
+let fileLoadingManager = null;
 
 // Equalizer
 let bassFilter = null;
@@ -443,6 +445,10 @@ debugLog('✅ Enhanced Lyrics Manager initialized', 'success');
 let visualizerController = null;
 
 if (typeof VisualizerUIController !== 'undefined') {
+    // Ensure visualizerManager is initialized
+    if (!visualizerManager && typeof VisualizerManager !== 'undefined') {
+        visualizerManager = new VisualizerManager();
+    }
     visualizerController = new VisualizerUIController(visualizerManager, debugLog);
     
     visualizerController.init({
@@ -785,8 +791,14 @@ function setupAudioContext() {
         
         // Initialize visualizer
         if (analyser && canvas && dataArray) {
-            visualizerManager.initMainVisualizer(canvas, analyser, dataArray, bufferLength);
-            debugLog('Audio visualizer initialized', 'success');
+            if (!visualizerManager && typeof VisualizerManager !== 'undefined') {
+                visualizerManager = new VisualizerManager();
+            }
+            if (visualizerManager) {
+                visualizerManager.initMainVisualizer(canvas, analyser, dataArray, bufferLength);
+                visualizerManager.start();
+                debugLog('Audio visualizer initialized', 'success');
+            }
         }
         
         // Apply performance settings
@@ -1201,12 +1213,14 @@ if (jumpToCurrentBtn) {
     }
 
 // ✅ NEW: Pass analysis data to visualizer if available
-if (track.analysis) {
-    visualizerManager.setTrackAnalysis(track.analysis);
-    debugLog(`🎨 Enhanced visualizer mode: BPM=${track.analysis.bpm}, Energy=${(track.analysis.energy * 100).toFixed(0)}%, Mood=${track.analysis.mood}`, 'success');
-} else {
-    visualizerManager.clearTrackAnalysis();
-    debugLog('🎨 Standard visualizer mode (no analysis data)', 'info');
+if (visualizerManager) {
+    if (track.analysis) {
+        visualizerManager.setTrackAnalysis(track.analysis);
+        debugLog(`🎨 Enhanced visualizer mode: BPM=${track.analysis.bpm}, Energy=${(track.analysis.energy * 100).toFixed(0)}%, Mood=${track.analysis.mood}`, 'success');
+    } else {
+        visualizerManager.clearTrackAnalysis();
+        debugLog('🎨 Standard visualizer mode (no analysis data)', 'info');
+    }
 }
 
 // ✅ Ensure visualizer has dataArray
@@ -1510,7 +1524,6 @@ loadButton.onclick = async () => {
     await fileLoadingManager.loadFiles(files);
 });
 // ========== FILE LOADING MANAGER SETUP ==========
-let fileLoadingManager = null;
 
     
     // Initialize ENHANCED file loading manager
