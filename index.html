@@ -30,13 +30,7 @@
         <button id="sidebar-toggle" class="sidebar-toggle">☰</button>
         
         <div class="sidebar-content">
-            <div class="sidebar-item">
-                <button id="smart-playlist-button" class="sidebar-btn" data-icon="🧠" data-label="Smart Playlists" disabled>
-                    <span class="sidebar-icon">🧠</span>
-                    <span class="sidebar-label">Smart Playlists</span>
-                </button>
-            </div>
-            
+
             <div class="sidebar-item">
                 <button id="crossfade-button" class="sidebar-btn" data-icon="🎚️" data-label="Crossfade" disabled>
                     <span class="sidebar-icon">🎚️</span>
@@ -58,13 +52,7 @@
     </button>
 </div>
             
-            <div class="sidebar-item">
-                <button id="dj-mode-button" class="sidebar-btn" data-icon="🎧" data-label="DJ Mode" disabled>
-                    <span class="sidebar-icon">🎧</span>
-                    <span class="sidebar-label">DJ Mode</span>
-                </button>
-            </div>
-            
+
             <div class="sidebar-item">
                 <button id="debug-toggle" class="sidebar-btn" data-icon="🛠" data-label="Debug">
                     <span class="sidebar-icon">🛠</span>
@@ -303,47 +291,6 @@
         </div>
     </div>
     
-    <!-- Smart Playlist Modal -->
-    <div id="smart-playlist-modal" style="display: none;">
-        <div class="smart-playlist-overlay"></div>
-        <div class="smart-playlist-content">
-            <div class="smart-playlist-header">
-                <h2>🧠 Smart Playlist Generator</h2>
-                <button class="smart-playlist-close">✕</button>
-            </div>
-            <div class="smart-playlist-body">
-                <div class="analysis-section">
-                    <h3>📊 Step 1: Analyze Your Music</h3>
-                    <div class="button-group">
-                        <button id="analyze-all-btn">🔍 Analyze All Tracks</button>
-                        <button id="save-analysis-btn" disabled>💾 Save Analysis</button>
-                    </div>
-                    <div class="progress-container" id="analysis-progress-container">
-                        <div class="progress-bar">
-                            <div class="progress-fill" id="analysis-progress-fill">0%</div>
-                        </div>
-                        <div class="progress-text" id="analysis-progress-text">Ready to analyze...</div>
-                    </div>
-                </div>
-                <div class="analysis-section">
-                    <h3>🎯 Step 2: Choose Playlist Type</h3>
-                    <div class="templates-grid" id="templates-grid"></div>
-                </div>
-                <div class="playlist-result" id="smart-playlist-result">
-                    <div class="playlist-header">
-                        <div>
-                            <h3 id="result-title">Playlist Generated</h3>
-                            <p id="result-description" style="color: #aaa; margin-top: 5px;"></p>
-                        </div>
-                        <button id="load-smart-playlist-btn" class="success">▶️ Load to Player</button>
-                    </div>
-                    <div class="playlist-stats" id="smart-playlist-stats"></div>
-                    <div class="track-list" id="smart-track-list"></div>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <!-- DJ Mode Modal -->
 <div id="dj-modal" class="dj-modal">
     <div class="dj-container">
@@ -476,12 +423,9 @@
     <script src="metadata-editor.js"></script>
     <script src="background-audio-handler.js"></script>
     <script src="music-analyzer.js"></script>
-    <script src="smart-playlist-generator.js"></script>
     <script src="crossfade-manager.js"></script>
     <script src="auto-eq-manager.js"></script>
     <script src="analysis-text-parser.js"></script>
-    <script src="dj-mode-manager.js"></script>
-    <script src="dj-mode-ui.js"></script>
     <script src="custom-metadata-store.js"></script>
     <script src="folder-persistence.js"></script>
     <script src="volume-control.js"></script>

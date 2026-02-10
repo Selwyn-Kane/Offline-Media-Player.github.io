@@ -51,7 +51,6 @@ let canvasCtx = null;
 let currentDominantColor = null;
 let crossfadeManager = null;
 let autoEQManager = null;
-	let djModeManager = null;
 	let imageOptimizer = null;
 	let audioBufferManager = null;
 	let uiManager = null;
@@ -90,9 +89,6 @@ folderPersistence.getStats().then(stats => {
     debugLog('✅ UI Manager initialized', 'success');
 
     analyzer = new MusicAnalyzer(debugLog);
-    generator = new SmartPlaylistGenerator(analyzer, debugLog);
-    debugLog('✅ Smart playlist system initialized', 'success');
-
 
     // NOW initialize parsers (after they're declared)
     metadataParser = new MetadataParser(debugLog);
@@ -2032,51 +2028,7 @@ if (volumeBoostButton && volumeControl) {
     }, 500);
 }
 
-// ✅ DJ MODE BUTTON
-const djModeButton = document.getElementById('dj-mode-button');
-if (djModeButton) {
-    djModeButton.onclick = () => {
-        if (!djModeManager.enabled) {
-            // Enable DJ Mode
-            playlist = djModeManager.enableDJMode(playlist, currentTrackIndex);
-            
-            // Force disable shuffle (DJ Mode incompatible)
-            if (isShuffled) {
-    isShuffled = false;
-    shuffleButton.classList.remove('active');
-    updatePlaylistStatus();
-}
-            
-            djModeButton.classList.add('active');
-            djModeButton.textContent = '🎧 DJ Mode On';
-            
-            // Re-render playlist
-            playlistRenderer.setPlaylist(playlist, currentTrackIndex);
-playlistRenderer.render();
-            
-            localStorage.setItem('djModeEnabled', 'true');
-            debugLog('DJ Mode enabled - playlist reordered', 'success');
-        } else {
-            // Disable DJ Mode
-            const result = djModeManager.disableDJMode(playlist[currentTrackIndex]);
-            playlist = result.playlist;
-            currentTrackIndex = result.newIndex;
-            
-            djModeButton.classList.remove('active');
-            djModeButton.textContent = '🎧 DJ Mode Off';
-            
-            // Re-render playlist
-            playlistRenderer.setPlaylist(playlist, currentTrackIndex);
-playlistRenderer.render();
-            
-            localStorage.removeItem('djModeEnabled');
-            debugLog('DJ Mode disabled - original order restored', 'info');
-        }
-        
-        updatePlaylistStatus();
-    };
-}
-        
+
         // Keyboard shortcuts (User's Code)
         document.addEventListener('keydown', (e) => {
             // Ignore if typing in input fields
@@ -3384,22 +3336,13 @@ playlistRenderer.render();
 
 // NOTE: crossfadeManager will be initialized later in setupAudioContext
 crossfadeManager = null; // Initialize as null first
-djModeManager = new DJModeManager(debugLog);
-
 debugLog('âœ… Advanced systems prepared', 'success');
 
 // Load saved preferences (with null checks)
 const savedCrossfade = localStorage.getItem('crossfadeEnabled') === 'true';
 const savedAutoEQ = localStorage.getItem('autoEQEnabled') === 'true';
-const savedDJMode = localStorage.getItem('djModeEnabled') === 'true';
-
 if (savedCrossfade && crossfadeManager) crossfadeManager.setEnabled(true);
 if (savedAutoEQ && autoEQManager) autoEQManager.setEnabled(true);
-if (savedDJMode) {
-    djModeManager.enabled = true;
-    djModeButton.classList.add('active');
-}
-
     // Auto-fetch lyrics button
 const autoLyricsBtn = document.getElementById('auto-lyrics-btn');
 
@@ -3418,278 +3361,6 @@ if (deepAnalysisBtn) {
     };
 }
     
-    // ========== SMART PLAYLIST INTEGRATION ==========
-
-let analyzedTracks = [];
-let currentSmartPlaylist = null;
-
-// Enable smart playlist button when tracks are loaded
-function updateSmartPlaylistButton() {
-    const smartBtn = document.getElementById('smart-playlist-button');
-    if (smartBtn) {
-        smartBtn.disabled = playlist.length === 0;
-    }
-}
-
-// Call this whenever playlist changes
-// Add to handleFileLoad, clearButton.onclick, etc.
-
-// Smart Playlist Button Handler
-const smartPlaylistBtn = document.getElementById('smart-playlist-button');
-const smartPlaylistModal = document.getElementById('smart-playlist-modal');
-const smartPlaylistClose = document.querySelector('.smart-playlist-close');
-
-if (smartPlaylistBtn) {
-    smartPlaylistBtn.onclick = () => {
-        if (playlist.length === 0) {
-            alert('Please load some music first!');
-            return;
-        }
-        
-        smartPlaylistModal.style.display = 'flex';
-        renderTemplates();
-        
-        // Check if we have cached analysis
-        const cachedCount = analyzer.analysisCache.size;
-        if (cachedCount > 0) {
-            document.getElementById('analysis-progress-text').textContent = 
-                `✅ ${cachedCount} tracks already analyzed`;
-        }
-    };
-}
-
-if (smartPlaylistClose) {
-    smartPlaylistClose.onclick = () => {
-        smartPlaylistModal.style.display = 'none';
-    };
-}
-
-// Close modal when clicking overlay
-if (smartPlaylistModal) {
-    smartPlaylistModal.querySelector('.smart-playlist-overlay').onclick = () => {
-        smartPlaylistModal.style.display = 'none';
-    };
-}
-
-// Template icons
-const templateIcons = {
-    workout: '💪',
-    study: '📚',
-    djMix: '🎧',
-    wakeUp: '☀️',
-    party: '🎉',
-    chill: '😌',
-    runJog: '🏃',
-    sleep: '😴'
-};
-
-// Render template cards
-function renderTemplates() {
-    const grid = document.getElementById('templates-grid');
-    if (!grid) return;
-    
-    grid.innerHTML = '';
-    
-    generator.getTemplateNames().forEach(name => {
-        const info = generator.getTemplateInfo(name);
-        const icon = templateIcons[name] || '🎵';
-        
-        const card = document.createElement('div');
-        card.className = 'template-card';
-        card.innerHTML = `
-            <div class="template-icon">${icon}</div>
-            <div class="template-name">${info.name}</div>
-            <div class="template-description">${info.description}</div>
-        `;
-        
-        card.onclick = () => generateSmartPlaylist(name, card);
-        grid.appendChild(card);
-    });
-}
-
-// Analyze All Tracks Button
-const analyzeAllBtn = document.getElementById('analyze-all-btn');
-const saveAnalysisBtn = document.getElementById('save-analysis-btn');
-const smartProgressContainer = document.getElementById('analysis-progress-container');  // ← RENAMED
-const progressFill = document.getElementById('analysis-progress-fill');
-const progressText = document.getElementById('analysis-progress-text');
-
-if (analyzeAllBtn) {
-    analyzeAllBtn.onclick = async () => {
-        if (playlist.length === 0) {
-            alert('No tracks loaded!');
-            return;
-        }
-        
-        analyzeAllBtn.disabled = true;
-        smartProgressContainer.classList.add('show');
-        progressText.textContent = 'Starting analysis...';
-        
-        analyzedTracks = [];
-        
-        for (let i = 0; i < playlist.length; i++) {
-            const track = playlist[i];
-            
-            try {
-                const response = await fetch(track.audioURL);
-                const blob = await response.blob();
-                const file = new File([blob], track.fileName, { type: 'audio/mpeg' });
-                
-                progressText.textContent = `Analyzing: ${track.metadata?.title || track.fileName} (${i + 1}/${playlist.length})`;
-                
-                const analysis = await analyzer.analyzeTrack(file, track.fileName);
-                
-                analyzedTracks.push({
-                    ...track,
-                    analysis: analysis
-                });
-                
-                // ✅ NEW: Also save analysis back to main playlist
-                playlist[i].analysis = analysis;
-                
-                const percent = Math.round(((i + 1) / playlist.length) * 100);
-                progressFill.style.width = `${percent}%`;
-                progressFill.textContent = `${percent}%`;
-                
-            } catch (err) {
-                debugLog(`Failed to analyze ${track.fileName}: ${err.message}`, 'error');
-            }
-        }
-        
-        progressText.textContent = `✅ Analysis complete! ${analyzedTracks.length} tracks analyzed`;
-        analyzeAllBtn.disabled = false;
-        saveAnalysisBtn.disabled = false;
-        
-        // ✅ NEW: Update current track's visualizer if playing
-        if (currentTrackIndex !== -1 && playlist[currentTrackIndex].analysis) {
-            visualizerManager.setTrackAnalysis(playlist[currentTrackIndex].analysis);
-            debugLog('🎨 Visualizer upgraded to enhanced mode!', 'success');
-        }
-        
-        debugLog(`Smart playlist analysis complete: ${analyzedTracks.length} tracks`, 'success');
-    };
-}
-
-// Generate Playlist
-async function generateSmartPlaylist(templateName, cardElement) {
-    if (analyzedTracks.length === 0) {
-        alert('Please analyze your music first!');
-        return;
-    }
-    
-    // Clear previous selection
-    document.querySelectorAll('.template-card').forEach(c => c.classList.remove('active'));
-    cardElement.classList.add('active');
-    
-    debugLog(`Generating ${templateName} playlist...`, 'info');
-    
-    // Generate
-    currentSmartPlaylist = await generator.generatePlaylist(templateName, analyzedTracks);
-    
-    if (currentSmartPlaylist && currentSmartPlaylist.tracks.length > 0) {
-        displaySmartPlaylist(currentSmartPlaylist);
-    } else {
-        alert('No tracks match the playlist criteria. Try analyzing more music!');
-    }
-}
-
-// Display Generated Playlist
-function displaySmartPlaylist(smartPlaylist) {
-    const result = document.getElementById('smart-playlist-result');
-    result.classList.add('show');
-    
-    // Update header
-    document.getElementById('result-title').textContent = smartPlaylist.name;
-    document.getElementById('result-description').textContent = smartPlaylist.description;
-    
-    // Display stats
-    const statsContainer = document.getElementById('smart-playlist-stats');
-    statsContainer.innerHTML = `
-        <div class="stat-box">
-            <div class="stat-label">Tracks</div>
-            <div class="stat-value">${smartPlaylist.stats.trackCount}</div>
-        </div>
-        <div class="stat-box">
-            <div class="stat-label">Duration</div>
-            <div class="stat-value">${smartPlaylist.stats.durationFormatted}</div>
-        </div>
-        <div class="stat-box">
-            <div class="stat-label">Avg BPM</div>
-            <div class="stat-value">${Math.round(smartPlaylist.stats.avgBPM)}</div>
-        </div>
-        <div class="stat-box">
-            <div class="stat-label">Avg Energy</div>
-            <div class="stat-value">${(smartPlaylist.stats.avgEnergy * 100).toFixed(0)}%</div>
-        </div>
-    `;
-    
-    // Display tracks
-    const trackList = document.getElementById('smart-track-list');
-    trackList.innerHTML = '';
-    
-    smartPlaylist.tracks.forEach((track, i) => {
-        const item = document.createElement('div');
-        item.className = 'track-item';
-        item.innerHTML = `
-            <div class="track-number">${i + 1}</div>
-            <div class="track-info">
-                <div class="track-title">${track.metadata?.title || track.fileName}</div>
-                <div class="track-artist">${track.metadata?.artist || 'Unknown Artist'}</div>
-                <div class="track-analysis">
-                    <span>BPM: ${track.analysis.bpm}</span>
-                    <span>Energy: ${(track.analysis.energy * 100).toFixed(0)}%</span>
-                    <span>${track.analysis.mood}</span>
-                </div>
-            </div>
-        `;
-        trackList.appendChild(item);
-    });
-    
-    // Scroll to result
-    result.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    
-    debugLog(`Smart playlist displayed: ${smartPlaylist.tracks.length} tracks`, 'success');
-}
-
-// Load Playlist into Main Player
-const loadSmartPlaylistBtn = document.getElementById('load-smart-playlist-btn');
-if (loadSmartPlaylistBtn) {
-    loadSmartPlaylistBtn.onclick = () => {
-        if (!currentSmartPlaylist || currentSmartPlaylist.tracks.length === 0) {
-            alert('No playlist to load!');
-            return;
-        }
-        
-        // ✅ IMPORTANT: Keep analysis data when loading smart playlist
-        playlist = currentSmartPlaylist.tracks.map(track => ({
-            ...track,
-            analysis: track.analysis // Preserve analysis
-        }));
-        
-        currentTrackIndex = 0;
-        
-        // Re-render playlist display
-        playlistRenderer.setPlaylist(playlist, currentTrackIndex);
-playlistRenderer.render();
-        updatePlaylistStatus();
-        
-        // Load first track (visualizer will auto-enhance if analysis exists)
-        loadTrack(0);
-        
-        // Close modal
-        smartPlaylistModal.style.display = 'none';
-        
-        alert(`✅ Loaded ${playlist.length} tracks from smart playlist!\n\n🎨 Enhanced visualizer is now active!`);
-        debugLog(`Smart playlist loaded: ${playlist.length} tracks with analysis data`, 'success');
-
-        setTimeout(() => {
-            smartProgressContainer.classList.remove('show');
-        }, 2000);
-    };
-}
-
-// ========== END SMART PLAYLIST INTEGRATION ==========
-
 
 // ========== BACKGROUND MUSIC ANALYSIS ==========
 // REPLACE the entire startBackgroundAnalysis function with this:
