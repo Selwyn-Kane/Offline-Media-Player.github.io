@@ -2105,6 +2105,11 @@ if (clearCacheBtn) {
 const folderButton = document.getElementById('folder-button');
 
     folderButton.onclick = async () => {
+        // If the button is in needs-permission state, let the dedicated listener handle it
+        if (folderButton.classList.contains('needs-permission')) {
+            return;
+        }
+
         // Check if File System Access API is supported
         if (!('showDirectoryPicker' in window)) {
             // Mobile fallback: use the file loading manager's fallback
@@ -2119,6 +2124,35 @@ const folderButton = document.getElementById('folder-button');
         }
     
     try {
+        // If the button shows a saved folder but isn't active yet, try loading it
+        if (folderButton.classList.contains('has-saved') && !folderButton.classList.contains('active')) {
+            const loadResult = await folderPersistence.loadFolderHandle();
+            if (loadResult && loadResult.handle) {
+                const hasPermission = await folderPersistence.verifyFolderPermission(loadResult.handle, false);
+                if (hasPermission.granted) {
+                    folderHandle = loadResult.handle;
+                    folderButton.classList.remove('has-saved');
+                    folderButton.classList.add('active');
+                    folderButton.textContent = `📁 ${folderHandle.name} (Click to reload)`;
+                    updateFolderButtons();
+                    await loadFromFolder();
+                    return;
+                } else if (hasPermission.needsGesture) {
+                    // Trigger the permission request immediately since this is a user click
+                    const permissionResult = await folderPersistence.requestFolderPermission(loadResult.handle);
+                    if (permissionResult.granted) {
+                        folderHandle = loadResult.handle;
+                        folderButton.classList.remove('has-saved');
+                        folderButton.classList.add('active');
+                        folderButton.textContent = `📁 ${folderHandle.name} (Click to reload)`;
+                        updateFolderButtons();
+                        await loadFromFolder();
+                        return;
+                    }
+                }
+            }
+        }
+
         // Check if we have folder history
         const history = await folderPersistence.getHistory();
         const currentMetadata = await folderPersistence.getFolderMetadata();
@@ -2410,120 +2444,129 @@ autoReloadCheck.checked = autoReload;
         
         // Initial setup
         window.addEventListener('load', async () => {
+    // Wait for folder persistence to be ready
+    await folderPersistence.initPromise;
+    
+    // Check if we have a saved folder
+    const hasSaved = folderPersistence.hasSavedFolder();
+    const quickInfo = folderPersistence.getQuickInfo();
+    
     // ✅ DEBUG: Check persistence state
     console.log('=== FOLDER PERSISTENCE DEBUG ===');
-    console.log('Has saved folder (localStorage):', localStorage.getItem('hasSavedFolder'));
-    console.log('Saved folder name:', localStorage.getItem('savedFolderName'));
+    console.log('Has saved folder:', hasSaved);
+    console.log('Quick info:', quickInfo);
     console.log('Auto-reload enabled:', autoReloadCheck.checked);
     
-    await folderPersistence.initPromise;
-    const loadResult = await folderPersistence.loadFolderHandle();
-    console.log('Loaded from DB:', loadResult);
-    console.log('=== END DEBUG ===');
-
-// Show checkbox if folder is saved
-if (localStorage.getItem('hasSavedFolder') === 'true') {  // ✅ CORRECT!
-    autoReloadLabel.style.display = 'inline-block';
-}
-
-// Save preference on change
-autoReloadCheck.onchange = () => {
-    localStorage.setItem('autoReloadFolder', autoReloadCheck.checked);
-};
-// NEW: Check if we have a saved folder and auto-load it
-if (autoReload && folderPersistence.hasSavedFolder()) {
-    debugLog('Checking for saved folder...', 'info');
-    
-    try {
-        // ✅ CRITICAL: Ensure all systems ready before loading
-        await new Promise(resolve => {
-            if (fileLoadingManager && metadataParser && analyzer) {
-                resolve();
-            } else {
-                // Wait up to 2 seconds for initialization
-                let attempts = 0;
-                const checkInterval = setInterval(() => {
-                    attempts++;
-                    if (fileLoadingManager && metadataParser && analyzer) {
-                        clearInterval(checkInterval);
-                        resolve();
-                    } else if (attempts > 20) {
-                        clearInterval(checkInterval);
-                        resolve(); // Give up and try anyway
-                    }
-                }, 100);
-            }
-        });
-        
-        await folderPersistence.initPromise;
-        
-        const loadResult = await folderPersistence.loadFolderHandle();
-        
-        if (loadResult && loadResult.handle) {
-            const { handle, metadata } = loadResult;
-            
-            debugLog(`Found saved folder: ${handle.name}`, 'info');
-            
-            const hasPermission = await folderPersistence.verifyFolderPermission(handle, false);
-            
-            if (hasPermission.granted) {
-                folderHandle = handle;
-                folderButton.textContent = `📁 ${folderHandle.name} (Click to reload)`;
-                folderButton.classList.add('active');
-                
-                updateFolderButtons();
-                
-                debugLog('Auto-loading music from saved folder...', 'success');
-                
-                // ✅ FIX: Longer delay to ensure everything is ready
-                setTimeout(async () => {
-                    await loadFromFolder();
-                }, 1000); // Increased from 500ms
-                
-            } else if (hasPermission.needsGesture) {
-                // Permission needs to be requested with user gesture (Windows requirement)
-                folderHandle = handle;
-                folderButton.textContent = `📁 ${handle.name} (Click to grant access)`;
-                folderButton.classList.add('needs-permission');
-                
-                // Create a one-time click handler to request permission
-                const requestPermissionHandler = async () => {
-                    debugLog('Requesting folder permission...', 'info');
-                    const permissionResult = await folderPersistence.requestFolderPermission(handle);
-                    
-                    if (permissionResult.granted) {
-                        folderButton.textContent = `📁 ${handle.name} (Click to reload)`;
-                        folderButton.classList.remove('needs-permission');
-                        folderButton.classList.add('active');
-                        folderButton.removeEventListener('click', requestPermissionHandler);
-                        
-                        updateFolderButtons();
-                        
-                        debugLog('Permission granted! Loading music...', 'success');
-                        await loadFromFolder();
-                    } else {
-                        debugLog('Permission denied', 'error');
-                        folderPersistence.deleteFolderHandle();
-                        folderButton.textContent = '📁 Select Music Folder';
-                        folderButton.classList.remove('needs-permission');
-                        folderButton.removeEventListener('click', requestPermissionHandler);
-                    }
-                };
-                
-                folderButton.addEventListener('click', requestPermissionHandler);
-                playlistStatus.textContent = `Click "📁 ${handle.name}" to grant access and load music`;
-            } else {
-                debugLog('Permission denied for saved folder', 'warning');
-                folderPersistence.deleteFolderHandle();
-                
-                playlistStatus.textContent = `Previous folder "${handle.name}" needs permission - click "📁 Select Music Folder" to reload`;
-            }
+    // Show checkbox if folder is saved
+    if (hasSaved) {
+        autoReloadLabel.style.display = 'inline-block';
+        if (quickInfo) {
+            folderButton.textContent = `📁 ${quickInfo.name} (Click to load)`;
+            folderButton.classList.add('has-saved');
         }
-    } catch (err) {
-        debugLog(`Error loading saved folder: ${err.message}`, 'error');
-        folderPersistence.deleteFolderHandle();
     }
-}
+
+    // Save preference on change
+    autoReloadCheck.onchange = () => {
+        localStorage.setItem('autoReloadFolder', autoReloadCheck.checked);
+    };
+
+    // NEW: Check if we have a saved folder and auto-load it
+    if (autoReload && hasSaved) {
+        debugLog('Checking for saved folder...', 'info');
+        
+        try {
+            // ✅ CRITICAL: Ensure all systems ready before loading
+            await new Promise(resolve => {
+                if (fileLoadingManager && metadataParser && analyzer) {
+                    resolve();
+                } else {
+                    // Wait up to 2 seconds for initialization
+                    let attempts = 0;
+                    const checkInterval = setInterval(() => {
+                        attempts++;
+                        if (fileLoadingManager && metadataParser && analyzer) {
+                            clearInterval(checkInterval);
+                            resolve();
+                        } else if (attempts > 20) {
+                            clearInterval(checkInterval);
+                            resolve(); // Give up and try anyway
+                        }
+                    }, 100);
+                }
+            });
+            
+            const loadResult = await folderPersistence.loadFolderHandle();
+            console.log('Loaded from DB:', loadResult);
+            
+            if (loadResult && loadResult.handle) {
+                const { handle, metadata } = loadResult;
+                
+                debugLog(`Found saved folder: ${handle.name}`, 'info');
+                
+                const hasPermission = await folderPersistence.verifyFolderPermission(handle, false);
+                
+                if (hasPermission.granted) {
+                    folderHandle = handle;
+                    folderButton.textContent = `📁 ${folderHandle.name} (Click to reload)`;
+                    folderButton.classList.add('active');
+                    
+                    updateFolderButtons();
+                    
+                    debugLog('Auto-loading music from saved folder...', 'success');
+                    
+                    // ✅ FIX: Longer delay to ensure everything is ready
+                    setTimeout(async () => {
+                        await loadFromFolder();
+                    }, 1000); // Increased from 500ms
+                    
+                } else if (hasPermission.needsGesture) {
+                    // Permission needs to be requested with user gesture (Windows requirement)
+                    folderHandle = handle;
+                    folderButton.textContent = `📁 ${handle.name} (Click to grant access)`;
+                    folderButton.classList.add('needs-permission');
+                    
+                    // Create a one-time click handler to request permission
+                    const requestPermissionHandler = async () => {
+                        debugLog('Requesting folder permission...', 'info');
+                        const permissionResult = await folderPersistence.requestFolderPermission(handle);
+                        
+                        if (permissionResult.granted) {
+                            folderButton.textContent = `📁 ${handle.name} (Click to reload)`;
+                            folderButton.classList.remove('needs-permission');
+                            folderButton.classList.add('active');
+                            folderButton.removeEventListener('click', requestPermissionHandler);
+                            
+                            updateFolderButtons();
+                            
+                            debugLog('Permission granted! Loading music...', 'success');
+                            await loadFromFolder();
+                        } else {
+                            debugLog('Permission denied', 'error');
+                            folderPersistence.deleteFolderHandle();
+                            folderButton.textContent = '📁 Select Music Folder';
+                            folderButton.classList.remove('needs-permission');
+                            folderButton.removeEventListener('click', requestPermissionHandler);
+                        }
+                    };
+                    
+                    folderButton.addEventListener('click', requestPermissionHandler);
+                    playlistStatus.textContent = `Click "📁 ${handle.name}" to grant access and load music`;
+                } else {
+                    debugLog('Permission denied for saved folder', 'warning');
+                    folderPersistence.deleteFolderHandle();
+                    
+                    playlistStatus.textContent = `Previous folder "${handle.name}" needs permission - click "📁 Select Music Folder" to reload`;
+                }
+            } else {
+                console.log('ℹ️ No handle found in DB even though localStorage says it exists');
+            }
+        } catch (err) {
+            debugLog(`Error loading saved folder: ${err.message}`, 'error');
+            folderPersistence.deleteFolderHandle();
+        }
+    }
+    console.log('=== END DEBUG ===');
             
     if (typeof jsmediatags !== 'undefined') {
         debugLog('✅ jsmediatags library loaded successfully', 'success');
