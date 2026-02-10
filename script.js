@@ -26,6 +26,7 @@ let folderHandle = null;
 // Audio system
 let audioContext = null;
 let analyser = null;
+let visualizerManager = new VisualizerManager(); // ✅ INITIALIZE HERE
 let audioSource = null;
 let dataArray = null;
 let bufferLength = null;

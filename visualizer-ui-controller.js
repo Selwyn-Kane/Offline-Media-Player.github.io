@@ -208,7 +208,7 @@ class VisualizerUIController {
         }
     }
     
-enterFullscreen() {
+    enterFullscreen() {
     if (!this.elements.container || !this.elements.canvas) {
         this.debugLog('Fullscreen elements not found', 'error');
         return;
@@ -216,8 +216,16 @@ enterFullscreen() {
     
     this.fullscreenActive = true;
     
-    // Show container
+    // Show container and ensure controls are visible
     this.elements.container.classList.remove('fullscreen-viz-hidden');
+    this.controlsHidden = false;
+    
+    // Explicitly show controls
+    this.elements.container.classList.remove('controls-hidden');
+    if (this.elements.forceHideBtn) {
+        this.elements.forceHideBtn.style.opacity = '1';
+        this.elements.forceHideBtn.style.pointerEvents = 'all';
+    }
     
     // Try to use native fullscreen API with cross-browser support
     if (this.fullscreenHelper) {
