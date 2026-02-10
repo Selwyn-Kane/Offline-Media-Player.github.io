@@ -721,17 +721,6 @@ class VisualizerManager {
         console.log('✅ Fullscreen visualizer initialized');
     }
     
-    start(enabled = true) {
-        this.enabled = enabled;
-        if (enabled) {
-            if (this.mainAnimationId) cancelAnimationFrame(this.mainAnimationId);
-            this.performance.lastFrame = performance.now();
-            this.drawMain();
-        } else {
-            this.stop();
-        }
-    }
-
     startFullscreen() {
         if (!this.fullscreenCanvas || !this.fullscreenCtx) {
             console.error('❌ Fullscreen visualizer not initialized');
