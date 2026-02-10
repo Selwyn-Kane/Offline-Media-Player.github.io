@@ -1182,11 +1182,12 @@ if (jumpToCurrentBtn) {
         const lyrics = await lyricsManager.fetchLyricsOnline(artist, title);
         
         if (lyrics) {
-            // 4. Save to your existing IndexedDB cache
+            // 4. Save to your existing IndexedDB cache (converts to VTT internally)
             await lyricsManager.saveLyricsToDB(trackId, lyrics);
             
-            // 5. Load them into the player immediately
-            const parsedCues = vttParser.parseLRC(lyrics);
+            // 5. Load them into the player immediately (using VTT conversion)
+            const vttContent = vttParser.convertLRCToVTT(lyrics);
+            const parsedCues = vttParser.parseVTTContent(vttContent);
             lyricsManager.loadLyrics(parsedCues, trackId);
         }
     }

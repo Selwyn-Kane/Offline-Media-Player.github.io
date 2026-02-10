@@ -1167,10 +1167,12 @@ class LyricsManager {
             const transaction = this.db.transaction(['lyrics'], 'readwrite');
             const store = transaction.objectStore('lyrics');
             
-            // Parse LRC to cues if it's a string
+            // If lyrics is a string (LRC), convert it to VTT and then parse to cues
+            // This ensures we always store the format the player expects
             let cues = lyrics;
             if (typeof lyrics === 'string') {
-                cues = vttParser.parseLRC(lyrics);
+                const vttContent = vttParser.convertLRCToVTT(lyrics);
+                cues = vttParser.parseVTTContent(vttContent);
             }
 
             store.put({
@@ -1178,6 +1180,7 @@ class LyricsManager {
                 cues: cues,
                 timestamp: Date.now()
             });
+            this.debugLog(`💾 Lyrics for ${trackId} saved to cache as VTT-compatible cues`, 'success');
         } catch (e) {
             this.debugLog('Failed to save lyrics to DB', 'error');
         }

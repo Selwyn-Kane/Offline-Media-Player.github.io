@@ -392,6 +392,63 @@ class VTTParser {
             reader.readAsText(file);
         });
     }
+
+    parseLRC(lrcContent) {
+        const cues = [];
+        const lines = lrcContent.split('\n');
+        const timeRegex = /\[(\d{2}):(\d{2})\.(\d{2,3})\]/;
+
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim();
+            const match = line.match(timeRegex);
+
+            if (match) {
+                const minutes = parseInt(match[1], 10);
+                const seconds = parseInt(match[2], 10);
+                const msPart = match[3];
+                const milliseconds = parseInt(msPart.padEnd(3, '0').substring(0, 3), 10);
+                
+                const startTime = minutes * 60 + seconds + milliseconds / 1000;
+                const text = line.replace(timeRegex, '').trim();
+
+                if (text) {
+                    cues.push({
+                        startTime: startTime,
+                        endTime: startTime + 5, // Temporary end time
+                        text: text
+                    });
+                }
+            }
+        }
+
+        // Fix end times based on next cue's start time
+        for (let i = 0; i < cues.length - 1; i++) {
+            cues[i].endTime = cues[i + 1].startTime;
+        }
+
+        return cues;
+    }
+
+    convertLRCToVTT(lrcContent) {
+        const cues = this.parseLRC(lrcContent);
+        let vtt = "WEBVTT\n\n";
+
+        cues.forEach(cue => {
+            const start = this.formatVTTTime(cue.startTime);
+            const end = this.formatVTTTime(cue.endTime);
+            vtt += `${start} --> ${end}\n${cue.text}\n\n`;
+        });
+
+        return vtt;
+    }
+
+    formatVTTTime(seconds) {
+        const h = Math.floor(seconds / 3600);
+        const m = Math.floor((seconds % 3600) / 60);
+        const s = Math.floor(seconds % 60);
+        const ms = Math.floor((seconds % 1) * 1000);
+        return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`;
+    }
 }
 
 // Export for use
