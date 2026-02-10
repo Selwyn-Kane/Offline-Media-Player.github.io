@@ -339,7 +339,16 @@
                     <h2 id="result-title">Playlist Generated</h2>
                     <p id="result-description" style="color: #aaa; margin-top: 5px;"></p>
                 </div>
-                <button id="load-playlist-btn" class="success">▶️ Load Playlist</button>
+                <div class="button-group">
+                    <select id="group-by-select" class="toolbar-select" style="padding: 8px; border-radius: 5px; background: #333; color: white; border: 1px solid #444;">
+                        <option value="none">No Grouping</option>
+                        <option value="mood">Group by Mood</option>
+                        <option value="artist">Group by Artist</option>
+                        <option value="key">Group by Key</option>
+                        <option value="tempo">Group by Tempo</option>
+                    </select>
+                    <button id="load-playlist-btn" class="success">▶️ Load Playlist</button>
+                </div>
             </div>
             
             <div class="playlist-stats" id="playlist-stats">
@@ -454,15 +463,13 @@
         }
         
         // Display generated playlist
-        function displayPlaylist(playlist) {
+        function displayPlaylist(playlist, groupBy = 'none') {
             const result = document.getElementById('playlist-result');
             result.classList.add('show');
             
-            // Update header
             document.getElementById('result-title').textContent = playlist.name;
             document.getElementById('result-description').textContent = playlist.description;
             
-            // Display stats
             const statsContainer = document.getElementById('playlist-stats');
             statsContainer.innerHTML = `
                 <div class="stat-box">
@@ -483,31 +490,54 @@
                 </div>
             `;
             
-            // Display tracks
             const trackList = document.getElementById('track-list');
             trackList.innerHTML = '';
             
-            playlist.tracks.forEach((track, i) => {
-                const item = document.createElement('div');
-                item.className = 'track-item';
-                item.innerHTML = `
-                    <div class="track-number">${i + 1}</div>
-                    <div class="track-info">
-                        <div class="track-title">${track.metadata?.title || track.fileName}</div>
-                        <div class="track-artist">${track.metadata?.artist || 'Unknown Artist'}</div>
-                        <div class="track-analysis">
-                            <span>BPM: ${track.analysis.bpm}</span>
-                            <span>Energy: ${(track.analysis.energy * 100).toFixed(0)}%</span>
-                            <span>${track.analysis.mood}</span>
-                        </div>
-                    </div>
-                `;
-                trackList.appendChild(item);
-            });
+            if (groupBy === 'none') {
+                playlist.tracks.forEach((track, i) => {
+                    renderTrackItem(track, i + 1, trackList);
+                });
+            } else {
+                const groups = generator.groupTracks(playlist.tracks, groupBy);
+                Object.entries(groups).forEach(([groupName, tracks]) => {
+                    const groupHeader = document.createElement('div');
+                    groupHeader.style.cssText = 'padding: 15px; background: rgba(220, 53, 69, 0.1); border-left: 4px solid #dc3545; margin: 20px 0 10px 0; font-weight: bold; border-radius: 0 5px 5px 0;';
+                    groupHeader.textContent = `${groupName} (${tracks.length})`;
+                    trackList.appendChild(groupHeader);
+                    
+                    tracks.forEach((track, i) => {
+                        renderTrackItem(track, i + 1, trackList);
+                    });
+                });
+            }
             
-            // Scroll to result
             result.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
+
+        function renderTrackItem(track, number, container) {
+            const item = document.createElement('div');
+            item.className = 'track-item';
+            item.innerHTML = `
+                <div class="track-number">${number}</div>
+                <div class="track-info">
+                    <div class="track-title">${track.metadata?.title || track.fileName}</div>
+                    <div class="track-artist">${track.metadata?.artist || 'Unknown Artist'}</div>
+                    <div class="track-analysis">
+                        <span>BPM: ${track.analysis.bpm}</span>
+                        <span>Energy: ${(track.analysis.energy * 100).toFixed(0)}%</span>
+                        <span>Mood: ${track.analysis.mood}</span>
+                        ${track.analysis.isVintage ? '<span style="color: #ffc107">📻 Vintage</span>' : ''}
+                    </div>
+                </div>
+            `;
+            container.appendChild(item);
+        }
+
+        document.getElementById('group-by-select').onchange = (e) => {
+            if (currentPlaylist) {
+                displayPlaylist(currentPlaylist, e.target.value);
+            }
+        };
         
         // Load playlist into main player
         document.getElementById('load-playlist-btn').onclick = () => {

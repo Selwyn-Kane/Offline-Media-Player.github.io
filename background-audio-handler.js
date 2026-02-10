@@ -236,9 +236,13 @@ class EnhancedBackgroundAudioHandler {
             artwork.push({ src: iconSvg, sizes: '512x512', type: 'image/svg+xml' });
         }
         
+        // Enhance title with status if helpful
+        const displayTitle = metadata.title || track.fileName || 'Unknown Track';
+        const displayArtist = metadata.artist || 'Unknown Artist';
+        
         const mediaMetadata = new MediaMetadata({
-            title: metadata.title || track.fileName || 'Unknown Track',
-            artist: metadata.artist || 'Unknown Artist',
+            title: displayTitle,
+            artist: displayArtist,
             album: metadata.album || 'Unknown Album',
             artwork: artwork
         });
@@ -286,16 +290,21 @@ class EnhancedBackgroundAudioHandler {
     
     updatePositionState() {
         if (!('setPositionState' in navigator.mediaSession)) return;
-        if (!this.player || !this.player.duration || isNaN(this.player.duration)) return;
+        if (!this.player || !this.player.duration || isNaN(this.player.duration)) {
+            try {
+                navigator.mediaSession.setPositionState(null);
+            } catch(e) {}
+            return;
+        }
         
         try {
+            const duration = this.player.duration;
+            const position = Math.min(Math.max(this.player.currentTime, 0), duration);
+            
             navigator.mediaSession.setPositionState({
-                duration: this.player.duration,
-                playbackRate: this.player.playbackRate || 1.0,
-                position: Math.min(
-                    Math.max(this.player.currentTime, 0), 
-                    this.player.duration
-                )
+                duration: duration,
+                playbackRate: Math.abs(this.player.playbackRate) || 1.0,
+                position: position
             });
         } catch (error) {
             // Silently ignore - can fail during track transitions

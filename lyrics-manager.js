@@ -619,6 +619,8 @@ class LyricsManager {
                 
                 line.style.color = `rgb(${accent.r}, ${accent.g}, ${accent.b})`;
                 line.style.textShadow = `0 0 30px rgba(${accent.r}, ${accent.g}, ${accent.b}, 0.8)`;
+                line.style.transform = 'scale(1.05)';
+                line.style.transition = 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
                 
                 if (this.state.autoScroll) {
                     const lineRect = line.getBoundingClientRect();
@@ -638,6 +640,7 @@ class LyricsManager {
                 const alpha = 0.4 + (index / this.cues.length) * 0.2;
                 line.style.color = `rgba(255, 255, 255, ${alpha})`;
                 line.style.textShadow = 'none';
+                line.style.transform = 'scale(1)';
             }
         });
     }

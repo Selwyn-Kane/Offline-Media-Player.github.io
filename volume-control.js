@@ -17,7 +17,8 @@ class VolumeControl {
         // Advanced features
         this.boostEnabled = false;
         this.boostAmount = 1.5; // 1.5 = 150%
-        this.normalizationEnabled = false;
+        this.normalizationEnabled = true; // Enabled by default for better QoL
+        this.targetLoudness = 0.7; // Target normalization level
         this.trackVolumes = new Map(); // Per-track volume memory
         this.volumeHistory = [];
         this.historyIndex = -1;
@@ -223,32 +224,43 @@ forceReconnect() {
      * @param {number} volume - Volume value (0-1)
      * @param {boolean} smooth - Use smooth ramping
      */
-    applyVolume(volume, smooth = false) {
+    applyVolume(volume, smooth = false, trackAnalysis = null) {
+        let normalizationMultiplier = 1.0;
+        
+        // Apply smart normalization if enabled and analysis is available
+        if (this.normalizationEnabled && trackAnalysis && trackAnalysis.loudness) {
+            const trackLoudness = trackAnalysis.loudness;
+            // Calculate how much to adjust to reach target (simplified ReplayGain-like)
+            // If track is quiet (e.g. 0.4), multiplier will be > 1.0
+            // If track is loud (e.g. 0.9), multiplier will be < 1.0
+            normalizationMultiplier = this.targetLoudness / Math.max(0.1, trackLoudness);
+            
+            // Clamp multiplier to prevent extreme changes
+            normalizationMultiplier = Math.max(0.5, Math.min(2.0, normalizationMultiplier));
+        }
+
         if (this.isAudioContextInitialized && this.gainNode && this.audioContext) {
-            // Resume audio context if needed
             if (this.audioContext.state === 'suspended') {
                 this.audioContext.resume();
             }
             
             // Use Web Audio API gain node
-            const targetGain = volume * (this.boostEnabled ? this.boostAmount : 1.0);
+            const boostMultiplier = this.boostEnabled ? this.boostAmount : 1.0;
+            const targetGain = volume * boostMultiplier * normalizationMultiplier;
             const now = this.audioContext.currentTime;
             
             try {
                 if (smooth) {
-                    // Smooth ramping
-                    this.gainNode.gain.setTargetAtTime(targetGain, now, 0.015);
+                    this.gainNode.gain.setTargetAtTime(targetGain, now, 0.02);
                 } else {
-                    // Instant change
                     this.gainNode.gain.setValueAtTime(targetGain, now);
                 }
             } catch (e) {
-                // Fallback if timing fails
                 this.gainNode.gain.value = targetGain;
             }
         } else {
-            // Fallback to player.volume (boost won't work here)
-            this.player.volume = volume;
+            // Fallback to player.volume (boost/norm won't work here)
+            this.player.volume = Math.min(1.0, volume * normalizationMultiplier);
         }
     }
     
@@ -398,15 +410,13 @@ forceReconnect() {
      * @param {boolean} addToHistory - Whether to add to undo history
      * @param {boolean} smooth - Use smooth ramping
      */
-    setVolume(volume, addToHistory = true, smooth = false) {
+    setVolume(volume, addToHistory = true, smooth = false, trackAnalysis = null) {
         volume = Math.max(0, Math.min(1, volume));
         
-        // If we're fading, stop the fade
         if (this.isFading) {
             this.stopFade();
         }
         
-        // Add to history
         if (addToHistory && volume !== this.baseVolume) {
             this.addToHistory(volume);
         }
@@ -414,10 +424,8 @@ forceReconnect() {
         this.baseVolume = volume;
         this.volumeSlider.value = volume;
         
-        // Apply through appropriate control
-        this.applyVolume(volume, smooth);
+        this.applyVolume(volume, smooth, trackAnalysis);
         
-        // Unmute if volume is increased
         if (this.isMutedState && volume > 0) {
             this.isMutedState = false;
             this.player.muted = false;
@@ -890,17 +898,32 @@ forceReconnect() {
         return this.boostEnabled;
     }
     
-    setBoost(enabled) {
-        if (!this.isAudioContextInitialized) {
-            this.debugLog('Warning: Audio context not ready, boost may not work', 'warning');
+    setBoost(enabled, amount = 1.5) {
+        this.boostEnabled = enabled;
+        this.boostAmount = Math.max(1.0, Math.min(3.0, amount));
+        
+        if (enabled && !this.isAudioContextInitialized) {
+            this.initAudioNodes();
         }
         
-        this.boostEnabled = enabled;
-        this.applyVolume(this.baseVolume);
+        this.applyVolume(this.baseVolume, true);
         this.updateUI();
         this.debounceSaveSettings();
         
-        this.debugLog(`Boost ${enabled ? 'enabled' : 'disabled'}`, 'info');
+        const status = enabled ? 'ON' : 'OFF';
+        const percent = Math.round(this.boostAmount * 100);
+        this.debugLog(`🎚️ Volume boost: ${status} (${percent}%)`, 'info');
+    }
+
+    /**
+     * Enable/disable smart normalization
+     * @param {boolean} enabled - Enable normalization
+     */
+    setNormalization(enabled) {
+        this.normalizationEnabled = enabled;
+        this.applyVolume(this.baseVolume, true);
+        this.debounceSaveSettings();
+        this.debugLog(`⚖️ Smart Normalization: ${enabled ? 'ON' : 'OFF'}`, 'info');
     }
     
     /**

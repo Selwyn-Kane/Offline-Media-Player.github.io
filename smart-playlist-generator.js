@@ -371,20 +371,25 @@ class SmartPlaylistGenerator {
      */
     findSimilar(referenceTrack, allTracks, limit = 10) {
         const ref = referenceTrack.analysis;
+        if (!ref) return [];
         
         const scored = allTracks
-            .filter(t => t !== referenceTrack)
+            .filter(t => t !== referenceTrack && t.analysis)
             .map(track => {
                 const analysis = track.analysis;
                 
                 // Calculate similarity score (lower is more similar)
-                const bpmDiff = Math.abs(analysis.bpm - ref.bpm);
+                // Normalize BPM difference (assuming 60-180 range)
+                const bpmDiff = Math.abs(analysis.bpm - ref.bpm) / 120;
                 const energyDiff = Math.abs(analysis.energy - ref.energy);
                 const danceabilityDiff = Math.abs(analysis.danceability - ref.danceability);
-                const moodMatch = analysis.mood === ref.mood ? 0 : 0.5;
-                const keyMatch = analysis.key === ref.key ? 0 : 0.3;
+                const moodMatch = analysis.mood === ref.mood ? 0 : 0.4;
+                const keyMatch = analysis.key === ref.key ? 0 : 0.2;
                 
-                const score = bpmDiff * 0.5 + energyDiff * 2 + danceabilityDiff + moodMatch + keyMatch;
+                // Factor in vintage similarity
+                const vintageMatch = analysis.isVintage === ref.isVintage ? 0 : 0.3;
+                
+                const score = (bpmDiff * 1.5) + (energyDiff * 2) + (danceabilityDiff * 1.5) + moodMatch + keyMatch + vintageMatch;
                 
                 return { track, score };
             })
@@ -392,6 +397,44 @@ class SmartPlaylistGenerator {
             .slice(0, limit);
         
         return scored.map(s => s.track);
+    }
+
+    /**
+     * Group tracks by various characteristics
+     */
+    groupTracks(tracks, groupBy) {
+        const groups = {};
+        
+        tracks.forEach(track => {
+            let key = 'Unknown';
+            const analysis = track.analysis;
+            
+            switch (groupBy) {
+                case 'mood':
+                    key = analysis?.mood || 'Neutral';
+                    break;
+                case 'artist':
+                    key = track.metadata?.artist || 'Unknown Artist';
+                    break;
+                case 'album':
+                    key = track.metadata?.album || 'Unknown Album';
+                    break;
+                case 'key':
+                    key = analysis?.key || 'Unknown Key';
+                    break;
+                case 'tempo':
+                    key = analysis?.tempo || 'Unknown Tempo';
+                    break;
+                case 'vintage':
+                    key = analysis?.isVintage ? 'Vintage' : 'Modern';
+                    break;
+            }
+            
+            if (!groups[key]) groups[key] = [];
+            groups[key].push(track);
+        });
+        
+        return groups;
     }
     
     /**

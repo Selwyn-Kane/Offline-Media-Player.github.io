@@ -240,7 +240,6 @@ playlistRenderer.setCallbacks({
         debugLog(`Track moved from ${fromIndex + 1} to ${insertIndex + 1}`, 'success');
     },
     onBatchDelete: (indices) => {
-        // Handle batch deletion
         const sortedIndices = [...indices].sort((a, b) => b - a);
         sortedIndices.forEach(index => {
             const track = playlist[index];
@@ -250,7 +249,6 @@ playlistRenderer.setCallbacks({
             playlist.splice(index, 1);
         });
         
-        // Adjust current track index
         if (indices.includes(currentTrackIndex)) {
             player.pause();
             player.src = '';
@@ -266,6 +264,44 @@ playlistRenderer.setCallbacks({
         updatePlaylistStatus();
         savePlaylistToStorage();
         debugLog(`${indices.length} tracks removed`, 'success');
+    },
+    onPlayNext: (index) => {
+        if (index === currentTrackIndex) return;
+        const track = playlist.splice(index, 1)[0];
+        const insertAt = currentTrackIndex + 1;
+        playlist.splice(insertAt, 0, track);
+        
+        playlistRenderer.setPlaylist(playlist, currentTrackIndex);
+        playlistRenderer.render();
+        savePlaylistToStorage();
+        debugLog(`⏭️ Next up: ${track.metadata?.title || track.fileName}`, 'success');
+    },
+    onFindSimilar: async (index) => {
+        const track = playlist[index];
+        if (!track.analysis) {
+            debugLog('⚠️ No analysis data for this track', 'warning');
+            return;
+        }
+        
+        debugLog(`🔍 Finding tracks similar to "${track.metadata?.title || track.fileName}"...`);
+        const similarTracks = generator.findSimilar(track, playlist, 10);
+        
+        if (similarTracks.length > 0) {
+            // Show result in smart playlist generator if available
+            if (window.showSmartPlaylistResult) {
+                window.showSmartPlaylistResult({
+                    name: `Similar to: ${track.metadata?.title || track.fileName}`,
+                    description: 'Automatically matched based on BPM, Energy, and Mood',
+                    tracks: similarTracks,
+                    stats: generator.calculatePlaylistStats(similarTracks)
+                });
+            } else {
+                // Fallback: highlight them in playlist or show alert
+                alert(`Found ${similarTracks.length} similar tracks! Try generating a "Similar" smart playlist.`);
+            }
+        } else {
+            debugLog('❌ No similar tracks found', 'warning');
+        }
     }
 });
     
@@ -510,6 +546,10 @@ getAudioData: () => {
             
             metadataContainer.style.background = `linear-gradient(135deg, rgb(${darkerR}, ${darkerG}, ${darkerB}) 0%, rgb(${lighterR}, ${lighterG}, ${lighterB}) 100%)`;
             metadataContainer.style.boxShadow = `0 8px 32px rgba(${r}, ${g}, ${b}, 0.3)`;
+            
+            // Apply to body background for a more immersive feel
+            document.body.style.backgroundColor = `rgb(${Math.floor(darkerR * 0.5)}, ${Math.floor(darkerG * 0.5)}, ${Math.floor(darkerB * 0.5)})`;
+            document.body.style.transition = 'background-color 1.5s ease';
         }
         
         // --- Debug Functions (User's Code) ---
@@ -1145,10 +1185,14 @@ if (jumpToCurrentBtn) {
         setupAudioContext();
     }
 
-           // ✅ ADD: Apply saved volume for this track (if exists)
+           // ✅ ADD: Apply saved volume for this track (if exists) with smart normalization
     const trackId = `${track.metadata?.artist || 'Unknown'}_${track.metadata?.title || track.fileName}`;
     if (volumeControl) {
-        volumeControl.applyTrackVolume(trackId);
+        // Pass analysis data for smart normalization
+        const hasAppliedSaved = volumeControl.applyTrackVolume(trackId);
+        if (!hasAppliedSaved) {
+            volumeControl.applyVolume(volumeControl.getVolume(), true, track.analysis);
+        }
     }
     
     // Apply Auto-EQ if enabled
@@ -1180,26 +1224,28 @@ if (!dataArray && analyser) {
             URL.revokeObjectURL(player.src);
         }
 
-        audioBufferManager.getBuffer(loadTrackIndex).then(buffer => {
-            // Ensure we are still on the same track after the async buffer load
-            if (currentTrackIndex !== loadTrackIndex) {
-                debugLog('Track index changed during buffer load, ignoring result', 'warning');
-                return;
-            }
+            audioBufferManager.getBuffer(loadTrackIndex).then(buffer => {
+                if (currentTrackIndex !== loadTrackIndex) {
+                    debugLog('Track index changed during buffer load, ignoring result', 'warning');
+                    return;
+                }
 
-            // Create a temporary blob URL for the buffer
-            const blob = new Blob([buffer], { type: 'audio/mpeg' });
-            const bufferUrl = URL.createObjectURL(blob);
-            player.src = bufferUrl;
-            player.load(); // Required after setting src
-            debugLog(`Audio source set from buffer manager for track ${loadTrackIndex}`, 'success');
-            
-            // Start playback
-            player.play().catch(e => debugLog(`Playback start failed: ${e.message}`, 'warning'));
+                const blob = new Blob([buffer], { type: 'audio/mpeg' });
+                const bufferUrl = URL.createObjectURL(blob);
+                player.src = bufferUrl;
+                player.load();
+                debugLog(`Audio source set from buffer manager for track ${loadTrackIndex}`, 'success');
+                
+                // ✅ SMART SKIP: Skip initial silence if detected
+                if (track.analysis?.silence?.start > 0.1) {
+                    const skipTime = track.analysis.silence.start;
+                    player.currentTime = skipTime;
+                    debugLog(`⏭️ Skipped ${skipTime.toFixed(2)}s of silence at start`, 'success');
+                }
 
-            // Preload upcoming tracks
-            audioBufferManager.preloadUpcoming(loadTrackIndex);
-        }).catch(err => {
+                player.play().catch(e => debugLog(`Playback start failed: ${e.message}`, 'warning'));
+                audioBufferManager.preloadUpcoming(loadTrackIndex);
+            }).catch(err => {
             debugLog(`Buffer manager failed, falling back to original URL: ${err.message}`, 'warning');
             player.src = track.audioURL;
             player.load();
@@ -2046,6 +2092,30 @@ playlistRenderer.render();
                 case 'P':
                     e.preventDefault();
                     if (!prevButton.disabled) playPrevious();
+                    break;
+                case 'l':
+                case 'L':
+                    e.preventDefault();
+                    if (loopButton && !loopButton.disabled) loopButton.click();
+                    break;
+                case 'h':
+                case 'H':
+                    e.preventDefault();
+                    if (shuffleButton && !shuffleButton.disabled) shuffleButton.click();
+                    break;
+                case 'j':
+                case 'J':
+                    e.preventDefault();
+                    const jumpBtn = document.getElementById('jump-to-current');
+                    if (jumpBtn && !jumpBtn.disabled) jumpBtn.click();
+                    break;
+                case '.':
+                    e.preventDefault();
+                    if (player.duration) player.currentTime += 30; // Jump 30s
+                    break;
+                case ',':
+                    e.preventDefault();
+                    if (player.duration) player.currentTime -= 30; // Rewind 30s
                     break;
 case 'm':
 case 'M':

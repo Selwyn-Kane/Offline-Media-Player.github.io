@@ -51,6 +51,11 @@ class MusicAnalyzer {
                 tempo: this.classifyTempo(bpm),
                 duration: audioBuffer.duration,
                 
+                // Structural analysis
+                intro: this.detectIntro(audioBuffer),
+                outro: this.detectOutro(audioBuffer),
+                silence: this.detectSilence(audioBuffer),
+
                 // Enhanced analysis
                 frequencyBands: frequencyBands,
                 dynamicRange: dynamicRange,
@@ -539,6 +544,57 @@ class MusicAnalyzer {
         if (bpm < 110) return 'moderate';
         if (bpm < 140) return 'fast';
         return 'very-fast';
+    }
+
+    /**
+     * Detect start of music (skip silence at start)
+     */
+    detectIntro(audioBuffer) {
+        const channel = audioBuffer.getChannelData(0);
+        const sampleRate = audioBuffer.sampleRate;
+        const threshold = 0.005;
+        
+        // Check first 15 seconds
+        const maxCheck = Math.min(channel.length, sampleRate * 15);
+        for (let i = 0; i < maxCheck; i += 100) {
+            if (Math.abs(channel[i]) > threshold) {
+                return { start: 0, end: i / sampleRate };
+            }
+        }
+        return { start: 0, end: 0 };
+    }
+
+    /**
+     * Detect end of music (where fade out finishes)
+     */
+    detectOutro(audioBuffer) {
+        const channel = audioBuffer.getChannelData(0);
+        const sampleRate = audioBuffer.sampleRate;
+        const duration = audioBuffer.duration;
+        const threshold = 0.005;
+        
+        // Check last 30 seconds
+        const maxCheck = Math.min(channel.length, sampleRate * 30);
+        const startOffset = channel.length - maxCheck;
+        
+        for (let i = channel.length - 1; i >= startOffset; i -= 100) {
+            if (Math.abs(channel[i]) > threshold) {
+                return { start: i / sampleRate, end: duration };
+            }
+        }
+        return { start: duration, end: duration };
+    }
+
+    /**
+     * Detect silence at start and end
+     */
+    detectSilence(audioBuffer) {
+        const intro = this.detectIntro(audioBuffer);
+        const outro = this.detectOutro(audioBuffer);
+        return {
+            start: intro.end,
+            end: audioBuffer.duration - outro.start
+        };
     }
     
     /**

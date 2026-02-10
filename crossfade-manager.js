@@ -1,6 +1,6 @@
 /* ============================================
-   Crossfade Manager - COMPLETELY REWRITTEN
-   Smart transitions that actually work
+   Crossfade Manager - ENHANCED v3.0
+   Smart transitions, Gapless Playback, and Audio Smoothing
    ============================================ */
 
 class CrossfadeManager {
@@ -10,6 +10,7 @@ class CrossfadeManager {
         
         // Core settings
         this.enabled = false;
+        this.gaplessEnabled = true; // New: Gapless playback support
         this.baseDuration = 4; // Default crossfade duration in seconds
         
         // State tracking
@@ -35,7 +36,7 @@ class CrossfadeManager {
         // Load saved settings
         this.loadSettings();
         
-        this.debugLog('✅ Crossfade Manager initialized', 'success');
+        this.debugLog('✅ Enhanced Crossfade Manager initialized', 'success');
     }
     
     /**
@@ -65,7 +66,6 @@ class CrossfadeManager {
     
     /**
      * Connect to audio chain - call this after EQ chain is set up
-     * Insert between trebleFilter and existing gain/compressor
      */
     connectToAudioChain(inputNode, outputNode) {
         if (!this.isInitialized) {
@@ -103,6 +103,11 @@ class CrossfadeManager {
                 this.enabled = enabled === 'true';
             }
             
+            const gapless = localStorage.getItem('gaplessEnabled');
+            if (gapless !== null) {
+                this.gaplessEnabled = gapless === 'true';
+            }
+            
             const duration = localStorage.getItem('crossfadeDuration');
             if (duration !== null) {
                 this.baseDuration = parseFloat(duration);
@@ -123,6 +128,7 @@ class CrossfadeManager {
     saveSettings() {
         try {
             localStorage.setItem('crossfadeEnabled', this.enabled.toString());
+            localStorage.setItem('gaplessEnabled', this.gaplessEnabled.toString());
             localStorage.setItem('crossfadeDuration', this.baseDuration.toString());
             localStorage.setItem('crossfadeStartOffset', this.fadeStartOffset.toString());
         } catch (err) {
@@ -134,6 +140,14 @@ class CrossfadeManager {
      * Calculate optimal crossfade duration based on track analysis
      */
     calculateFadeDuration(currentTrack, nextTrack) {
+        // If gapless is enabled and tracks are from same album/artist, use very short fade
+        if (this.gaplessEnabled && 
+            currentTrack?.metadata?.album === nextTrack?.metadata?.album && 
+            currentTrack?.metadata?.album) {
+            this.debugLog('✨ Gapless transition detected (Same Album)', 'info');
+            return 0.1; // Minimal crossfade for gapless
+        }
+
         let duration = this.baseDuration;
         
         if (!currentTrack?.analysis || !nextTrack?.analysis) {
@@ -180,22 +194,17 @@ class CrossfadeManager {
                 trackDuration - this.fadeStartOffset - 3,
                 outroStart - (this.baseDuration / 2)
             );
-            this.debugLog(`🎼 Fade during outro at ${fadeStart.toFixed(1)}s`, 'info');
             return fadeStart;
         }
         
         // High energy tracks = later fade
         if (analysis.energy > 0.7) {
-            const fadeStart = trackDuration - this.fadeStartOffset - 2;
-            this.debugLog(`⚡ High energy → fade at ${fadeStart.toFixed(1)}s`, 'info');
-            return fadeStart;
+            return trackDuration - this.fadeStartOffset - 1.5;
         }
         
         // Low energy = earlier fade
         if (analysis.energy < 0.3) {
-            const fadeStart = trackDuration - this.fadeStartOffset - 4;
-            this.debugLog(`😌 Low energy → fade at ${fadeStart.toFixed(1)}s`, 'info');
-            return fadeStart;
+            return trackDuration - this.fadeStartOffset - 4.5;
         }
         
         // Default
@@ -219,10 +228,8 @@ class CrossfadeManager {
             
             let blob;
             if (track.file) {
-                // If we have the file object, use it directly
                 blob = track.file;
             } else {
-                // Fetch and store
                 const response = await fetch(track.audioURL);
                 blob = await response.blob();
             }
@@ -243,7 +250,7 @@ class CrossfadeManager {
      * Start monitoring for crossfade opportunity
      */
     startMonitoring(player, currentTrack, nextTrack, onFadeCallback) {
-        if (!this.enabled || !nextTrack) {
+        if ((!this.enabled && !this.gaplessEnabled) || !nextTrack) {
             return;
         }
         
@@ -267,19 +274,19 @@ class CrossfadeManager {
         this.fadeDuration = fadeDuration;
         
         // Start checking every 200ms
-        this.stopMonitoring(); // Clear any existing
+        this.stopMonitoring();
         this.fadeCheckInterval = setInterval(() => {
             this.checkFadePoint(player, currentTrack, nextTrack);
         }, 200);
         
-        this.debugLog(`👁️ Monitoring for fade at ${fadeStartTime.toFixed(1)}s (${fadeDuration}s duration)`, 'info');
+        this.debugLog(`👁️ Monitoring for transition at ${fadeStartTime.toFixed(1)}s`, 'info');
     }
     
     /**
      * Check if it's time to start fading
      */
     checkFadePoint(player, currentTrack, nextTrack) {
-        if (!this.enabled || this.isFading || !player || !this.scheduledNextTrack) {
+        if ((!this.enabled && !this.gaplessEnabled) || this.isFading || !player || !this.scheduledNextTrack) {
             return;
         }
         
@@ -290,18 +297,13 @@ class CrossfadeManager {
             return;
         }
 
-        // Recalculate fade start time if not set or invalid
+        // Recalculate fade start time if not set
         if (!this.fadeStartTime || isNaN(this.fadeStartTime)) {
             this.fadeStartTime = this.calculateFadeStartPoint(currentTrack, duration);
         }
         
-        if (!this.fadeStartTime || isNaN(this.fadeStartTime)) {
-            return;
-        }
-        
         // Check if we've reached fade point
-        if (currentTime >= this.fadeStartTime && currentTime < duration - 0.5) {
-            this.debugLog('🎚️ STARTING CROSSFADE', 'success');
+        if (currentTime >= this.fadeStartTime && currentTime < duration - 0.2) {
             this.executeFade(player, currentTrack, nextTrack);
         }
     }
@@ -318,7 +320,6 @@ async executeFade(player, currentTrack, nextTrack) {
     this.stopMonitoring();
     
     try {
-        // Ensure audio context is running
         if (this.audioContext.state === 'suspended') {
             await this.audioContext.resume();
         }
@@ -326,23 +327,19 @@ async executeFade(player, currentTrack, nextTrack) {
         const fadeDuration = this.fadeDuration || this.baseDuration;
         const now = this.audioContext.currentTime;
         
-        // ✅ FIX: Calculate when track ACTUALLY ends
         const currentTime = player.currentTime;
         const timeRemaining = player.duration - currentTime;
         
         // Start fade out
-        if (this.fadeGainNode) {
+        if (this.fadeGainNode && this.enabled) {
             this.fadeGainNode.gain.cancelScheduledValues(now);
-            this.fadeGainNode.gain.setValueAtTime(1.0, now);
+            this.fadeGainNode.gain.setValueAtTime(this.fadeGainNode.gain.value, now);
             this.fadeGainNode.gain.exponentialRampToValueAtTime(0.001, now + fadeDuration);
-            
-            this.debugLog(`📉 Fading out over ${fadeDuration}s`, 'info');
+            this.debugLog(`📉 Fading out over ${fadeDuration.toFixed(1)}s`, 'info');
         }
         
-        // ✅ NEW: Switch when track has 0.5s left (not at midpoint)
-        const switchDelay = Math.max(100, (timeRemaining - 0.5) * 1000);
-        
-        this.debugLog(`🔄 Will switch in ${(switchDelay/1000).toFixed(1)}s`, 'info');
+        // Switch slightly before end for gapless/crossfade
+        const switchDelay = Math.max(0, (timeRemaining - (this.enabled ? 0.3 : 0.05)) * 1000);
         
         setTimeout(() => {
             this.switchToNextTrack(player, nextTrack);
@@ -351,7 +348,7 @@ async executeFade(player, currentTrack, nextTrack) {
         // Reset after fade completes
         setTimeout(() => {
             this.completeFade();
-        }, fadeDuration * 1000 + 500);
+        }, (this.enabled ? fadeDuration : 0.5) * 1000 + 500);
         
     } catch (err) {
         this.debugLog(`❌ Fade execution failed: ${err.message}`, 'error');
@@ -367,19 +364,16 @@ switchToNextTrack(player, nextTrack) {
         return;
     }
     
-    this.debugLog('🔄 Switching tracks...', 'info');
+    this.debugLog('🔄 Transitioning tracks...', 'info');
     
-    // ✅ Calculate intro skip time
     let startTime = 0;
-    if (nextTrack.analysis?.intro && nextTrack.analysis.intro.end) {
-        // Skip intro if it's longer than 2 seconds
+    // Only skip intro if crossfade is enabled (not for gapless album transitions)
+    if (this.enabled && nextTrack.analysis?.intro && nextTrack.analysis.intro.end) {
         if (nextTrack.analysis.intro.end > 2) {
             startTime = Math.min(8, nextTrack.analysis.intro.end);
-            this.debugLog(`⏭️ Intro detected: ${startTime.toFixed(1)}s`, 'info');
         }
     }
     
-    // Call the callback with intro skip info
     this.onFadeStart({
         track: nextTrack,
         startTime: startTime,
@@ -414,12 +408,9 @@ switchToNextTrack(player, nextTrack) {
         this.fadeStartTime = null;
         this.fadeDuration = null;
         
-        this.debugLog('✅ Crossfade complete', 'success');
+        this.debugLog('✅ Transition complete', 'success');
     }
     
-    /**
-     * Stop monitoring
-     */
     stopMonitoring() {
         if (this.fadeCheckInterval) {
             clearInterval(this.fadeCheckInterval);
@@ -427,9 +418,6 @@ switchToNextTrack(player, nextTrack) {
         }
     }
     
-    /**
-     * Cancel active fade
-     */
     cancelFade() {
         this.stopMonitoring();
         
@@ -447,48 +435,34 @@ switchToNextTrack(player, nextTrack) {
             URL.revokeObjectURL(this.preloadBlob);
             this.preloadBlob = null;
         }
-        
-        this.debugLog('🚫 Crossfade cancelled', 'info');
     }
     
-    /**
-     * Enable/disable crossfade
-     */
     setEnabled(enabled) {
         this.enabled = enabled;
-        
-        if (!enabled) {
-            this.cancelFade();
-        }
-        
+        if (!enabled) this.cancelFade();
         this.saveSettings();
-        this.debugLog(`Crossfade: ${enabled ? 'ON ✨' : 'OFF'}`, enabled ? 'success' : 'info');
+    }
+
+    setGaplessEnabled(enabled) {
+        this.gaplessEnabled = enabled;
+        this.saveSettings();
+        this.debugLog(`Gapless: ${enabled ? 'ON ✨' : 'OFF'}`, 'info');
     }
     
-    /**
-     * Set base fade duration
-     */
     setDuration(seconds) {
         this.baseDuration = Math.max(this.minFadeDuration, Math.min(this.maxFadeDuration, seconds));
         this.saveSettings();
-        this.debugLog(`Crossfade duration: ${this.baseDuration}s`, 'info');
     }
     
-    /**
-     * Set fade start offset
-     */
     setStartOffset(seconds) {
         this.fadeStartOffset = Math.max(3, Math.min(10, seconds));
         this.saveSettings();
-        this.debugLog(`Fade start offset: ${this.fadeStartOffset}s`, 'info');
     }
     
-    /**
-     * Get current settings
-     */
     getSettings() {
         return {
             enabled: this.enabled,
+            gaplessEnabled: this.gaplessEnabled,
             baseDuration: this.baseDuration,
             fadeStartOffset: this.fadeStartOffset,
             isFading: this.isFading,
@@ -496,28 +470,12 @@ switchToNextTrack(player, nextTrack) {
         };
     }
     
-    /**
-     * Clean up resources
-     */
     dispose() {
         this.cancelFade();
         this.stopMonitoring();
-        
-        if (this.preloadBlob) {
-            URL.revokeObjectURL(this.preloadBlob);
-        }
-        
-        if (this.fadeGainNode) {
-            try {
-                this.fadeGainNode.disconnect();
-            } catch (err) {
-                // Ignore
-            }
-        }
-        
-        this.debugLog('🧹 Crossfade manager disposed', 'info');
+        if (this.preloadBlob) URL.revokeObjectURL(this.preloadBlob);
+        if (this.fadeGainNode) try { this.fadeGainNode.disconnect(); } catch (err) {}
     }
 }
 
-// Export
 window.CrossfadeManager = CrossfadeManager;

@@ -122,6 +122,8 @@ class EnhancedPlaylistRenderer {
                     <option value="bpm">BPM</option>
                     <option value="energy">Energy</option>
                     <option value="mood">Mood</option>
+                    <option value="vintage">Vintage First</option>
+                    <option value="dance">Danceability</option>
                 </select>
                 <select id="playlist-filter" class="toolbar-select">
                     <option value="all">All Tracks</option>
@@ -372,8 +374,16 @@ class EnhancedPlaylistRenderer {
                         bVal = b.analysis?.energy || 0;
                         break;
                     case 'mood':
-                        aVal = a.analysis?.mood || '';
-                        bVal = b.analysis?.mood || '';
+                        aVal = (a.analysis?.mood || '').toLowerCase();
+                        bVal = (b.analysis?.mood || '').toLowerCase();
+                        break;
+                    case 'vintage':
+                        aVal = a.analysis?.isVintage ? 1 : 0;
+                        bVal = b.analysis?.isVintage ? 1 : 0;
+                        break;
+                    case 'dance':
+                        aVal = a.analysis?.danceability || 0;
+                        bVal = b.analysis?.danceability || 0;
                         break;
                     default:
                         return 0;
@@ -721,9 +731,11 @@ if (imageSrc) {
         
         menu.innerHTML = `
             <button data-action="play">▶️ Play Now</button>
+            <button data-action="playNext">⏭️ Play Next</button>
             <button data-action="edit">✏️ Edit Metadata</button>
             <button data-action="info">ℹ️ Track Info</button>
             ${track.analysis ? '<button data-action="analysis">📊 View Analysis</button>' : ''}
+            <button data-action="similar">🔍 Find Similar Tracks</button>
             <button data-action="remove">🗑️ Remove from Playlist</button>
         `;
         
@@ -746,6 +758,12 @@ if (imageSrc) {
             switch(action) {
                 case 'play':
                     if (this.onTrackClick) this.onTrackClick(index);
+                    break;
+                case 'playNext':
+                    if (this.onPlayNext) this.onPlayNext(index);
+                    break;
+                case 'similar':
+                    if (this.onFindSimilar) this.onFindSimilar(index);
                     break;
                 case 'edit':
                     if (this.onEditClick) this.onEditClick(index);
