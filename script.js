@@ -27,7 +27,6 @@ let folderHandle = null;
 let audioContext = null;
 let analyser = null;
 let visualizerManager = new VisualizerManager(); // ✅ INITIALIZE HERE
-let fileLoadingManager = null;
 let audioSource = null;
 let dataArray = null;
 let bufferLength = null;
@@ -305,8 +304,8 @@ playlistRenderer.setCallbacks({
             debugLog('❌ No similar tracks found', 'warning');
         }
     }
-    });
-
+});
+    
     debugLog('✅ Playlist renderer ready', 'success');
         
         // --- Color Extraction Functions ---
@@ -528,6 +527,7 @@ getAudioData: () => {
     });
     
     debugLog('✅ Visualizer UI controller integrated', 'success');
+}
 // ========== END VISUALIZER UI CONTROLLER ==========
         
         function applyDynamicBackground(color) {
@@ -1511,16 +1511,19 @@ loadButton.onclick = async () => {
     await fileLoadingManager.loadFiles(files);
 });
 // ========== FILE LOADING MANAGER SETUP ==========
-    // Initialize ENHANCED file loading manager
-    fileLoadingManager = new EnhancedFileLoadingManager(debugLog, {
-        supportedAudioFormats: ['mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac', 'wma', 'opus', 'webm'],
-        maxConcurrent: 3,          // Process 3 files simultaneously
-        retryAttempts: 2,          // Retry failed files 2 times
-        fuzzyMatchThreshold: 0.8,  // 80% similarity for fuzzy matching
-        chunkSize: 5,              // Process in chunks of 5
-        enableCaching: true        // Cache processed results
-    });
+let fileLoadingManager = null;
 
+    
+    // Initialize ENHANCED file loading manager
+fileLoadingManager = new EnhancedFileLoadingManager(debugLog, {
+    supportedAudioFormats: ['mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac', 'wma', 'opus', 'webm'],
+    maxConcurrent: 3,          // Process 3 files simultaneously
+    retryAttempts: 2,          // Retry failed files 2 times
+    fuzzyMatchThreshold: 0.8,  // 80% similarity for fuzzy matching
+    chunkSize: 5,              // Process in chunks of 5
+    enableCaching: true        // Cache processed results
+});
+    
     // Inject dependencies
     fileLoadingManager.init({
         metadataParser: metadataParser,
@@ -1529,7 +1532,7 @@ loadButton.onclick = async () => {
         customMetadataStore: customMetadataStore,
         analyzer: analyzer
     });
-
+    
     // Set callbacks
     fileLoadingManager.setCallbacks({
     onLoadStart: (fileCount) => {
