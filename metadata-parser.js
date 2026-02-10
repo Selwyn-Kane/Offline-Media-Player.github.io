@@ -148,16 +148,12 @@ class MetadataParser {
             return this.getDefaultMetadata(file);
         }
         
-        const decode = (start, len) => {
-            const bytes = new Uint8Array(buffer, start, len);
-            return new TextDecoder('iso-8859-1').decode(bytes).replace(/\0/g, '').trim();
-        };
-
+        // ID3v1 is traditionally ISO-8859-1, but many use local encodings
         return this.normalizeMetadata({
-            title: decode(3, 30),
-            artist: decode(33, 30),
-            album: decode(63, 30),
-            year: parseInt(decode(93, 4)) || null
+            title: this.decodeText(view, 3, 30, 0),
+            artist: this.decodeText(view, 33, 30, 0),
+            album: this.decodeText(view, 63, 30, 0),
+            year: parseInt(this.decodeText(view, 93, 4, 0)) || null
         }, file);
     }
 
@@ -462,18 +458,71 @@ class MetadataParser {
         return (view.getUint8(offset) << 21) | (view.getUint8(offset+1) << 14) | (view.getUint8(offset+2) << 7) | view.getUint8(offset+3);
     }
 
+    /**
+     * "Almost Redundant" Robust Text Decoder
+     * Handles BOM, encoding detection, Mojibake, and non-printable characters
+     */
     decodeText(view, start, length, encoding) {
         if (length <= 0) return '';
-        const bytes = new Uint8Array(view.buffer, start, length);
-        try {
-            if (encoding === 0) return new TextDecoder('iso-8859-1').decode(bytes).replace(/\0/g, '').trim();
-            if (encoding === 1 || encoding === undefined) return new TextDecoder('utf-8').decode(bytes).replace(/\0/g, '').trim();
-            if (encoding === 2) return new TextDecoder('utf-16le').decode(bytes).replace(/\0/g, '').trim();
-            if (encoding === 3) return new TextDecoder('utf-16be').decode(bytes).replace(/\0/g, '').trim();
-        } catch (e) {
-            return String.fromCharCode(...bytes.filter(b => b >= 32 && b <= 126)).trim();
+        
+        // Use a slice to avoid view issues with shared buffers
+        const bytes = new Uint8Array(view.buffer.slice(start, start + length));
+        
+        // Helper: Clean and trim the decoded string
+        const sanitize = (str) => {
+            if (!str) return '';
+            return str
+                .replace(/\0/g, '') // Remove null bytes
+                .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '') // Remove non-printable ASCII
+                .trim();
+        };
+
+        // 1. Check for Byte Order Mark (BOM) - overrides provided encoding
+        if (bytes.length >= 2) {
+            if (bytes[0] === 0xFF && bytes[1] === 0xFE) return sanitize(new TextDecoder('utf-16le').decode(bytes.slice(2)));
+            if (bytes[0] === 0xFE && bytes[1] === 0xFF) return sanitize(new TextDecoder('utf-16be').decode(bytes.slice(2)));
         }
-        return '';
+        if (bytes.length >= 3 && bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) {
+            return sanitize(new TextDecoder('utf-8').decode(bytes.slice(3)));
+        }
+
+        // 2. Multi-stage Decoding Strategy
+        const decoders = [];
+        
+        // Prioritize based on the provided encoding hint
+        if (encoding === 1 || encoding === undefined) decoders.push('utf-8', 'iso-8859-1', 'windows-1252');
+        else if (encoding === 2) decoders.push('utf-16le', 'utf-8', 'iso-8859-1');
+        else if (encoding === 3) decoders.push('utf-16be', 'utf-8', 'iso-8859-1');
+        else if (encoding === 0) decoders.push('iso-8859-1', 'windows-1252', 'utf-8');
+        else decoders.push('utf-8', 'iso-8859-1', 'windows-1252', 'utf-16le', 'utf-16be');
+
+        for (const enc of decoders) {
+            try {
+                const decoder = new TextDecoder(enc, { fatal: true });
+                const result = decoder.decode(bytes);
+                
+                // Heuristic: If we have too many replacement characters, it's likely wrong
+                if ((result.match(/\uFFFD/g) || []).length > result.length * 0.1) continue;
+                
+                // Heuristic: Check for common Mojibake patterns (e.g., "Ã©" instead of "é")
+                // If it looks like Mojibake, try to re-decode the result as UTF-8
+                if (enc === 'iso-8859-1' || enc === 'windows-1252') {
+                    try {
+                        const mojibakeCheck = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+                        if (mojibakeCheck.length < result.length) return sanitize(mojibakeCheck);
+                    } catch(e) {}
+                }
+
+                return sanitize(result);
+            } catch (e) {
+                continue; // Try next decoder
+            }
+        }
+
+        // 3. Ultimate Fallback: Strip everything but printable ASCII
+        return sanitize(Array.from(bytes)
+            .map(b => (b >= 32 && b <= 126) ? String.fromCharCode(b) : '')
+            .join(''));
     }
 
     decodeUTF16LE(view, start, length) {
