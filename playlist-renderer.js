@@ -1006,11 +1006,44 @@ ${Object.entries(stats.moods).map(([mood, count]) => `  ${mood}: ${count}`).join
             
             if (trackActualIndex === newIndex) {
                 item.classList.add('playing');
-                item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                // Scroll only within the playlist container, not the entire page
+                this._scrollToItemInContainer(item);
             } else {
                 item.classList.remove('playing');
             }
         });
+    }
+    
+    /**
+     * Scroll to item within the playlist container only
+     */
+    _scrollToItemInContainer(item) {
+        const container = document.getElementById('playlist-container');
+        if (!container) return;
+        
+        const containerRect = container.getBoundingClientRect();
+        const itemRect = item.getBoundingClientRect();
+        
+        // Check if item is already visible in the container
+        const isVisible = (
+            itemRect.top >= containerRect.top &&
+            itemRect.bottom <= containerRect.bottom
+        );
+        
+        if (!isVisible) {
+            // Calculate scroll position to center the item in the container
+            const containerScrollTop = container.scrollTop;
+            const itemOffsetTop = item.offsetTop;
+            const containerHeight = container.clientHeight;
+            const itemHeight = item.clientHeight;
+            
+            const scrollTo = itemOffsetTop - (containerHeight / 2) + (itemHeight / 2);
+            
+            container.scrollTo({
+                top: scrollTo,
+                behavior: 'smooth'
+            });
+        }
     }
     
     /**
@@ -1021,7 +1054,7 @@ ${Object.entries(stats.moods).map(([mood, count]) => `  ${mood}: ${count}`).join
         
         const currentItem = this.playlistItems.querySelector('.playlist-item.playing');
         if (currentItem) {
-            currentItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            this._scrollToItemInContainer(currentItem);
         } else {
             // If not visible due to filtering, reset filters
             this.searchQuery = '';
@@ -1032,7 +1065,7 @@ ${Object.entries(stats.moods).map(([mood, count]) => `  ${mood}: ${count}`).join
             
             setTimeout(() => {
                 const item = this.playlistItems.querySelector('.playlist-item.playing');
-                if (item) item.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                if (item) this._scrollToItemInContainer(item);
             }, 100);
         }
     }

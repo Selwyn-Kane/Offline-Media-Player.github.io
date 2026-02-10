@@ -1079,7 +1079,23 @@ if (jumpToCurrentBtn) {
     jumpToCurrentBtn.onclick = () => {
         const currentItem = playlistItems.querySelector('.playlist-item.playing');
         if (currentItem) {
-            currentItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            const container = document.getElementById('playlist-container');
+            if (container) {
+                const containerRect = container.getBoundingClientRect();
+                const itemRect = currentItem.getBoundingClientRect();
+                
+                // Calculate scroll position to center the item in the container
+                const itemOffsetTop = currentItem.offsetTop;
+                const containerHeight = container.clientHeight;
+                const itemHeight = currentItem.clientHeight;
+                
+                const scrollTo = itemOffsetTop - (containerHeight / 2) + (itemHeight / 2);
+                
+                container.scrollTo({
+                    top: scrollTo,
+                    behavior: 'smooth'
+                });
+            }
         }
     };
 }
@@ -2448,7 +2464,7 @@ if (autoReload && folderPersistence.hasSavedFolder()) {
             
             debugLog(`Found saved folder: ${handle.name}`, 'info');
             
-            const hasPermission = await folderPersistence.verifyFolderPermission(handle);
+            const hasPermission = await folderPersistence.verifyFolderPermission(handle, false);
             
             if (hasPermission.granted) {
                 folderHandle = handle;
@@ -2464,6 +2480,38 @@ if (autoReload && folderPersistence.hasSavedFolder()) {
                     await loadFromFolder();
                 }, 1000); // Increased from 500ms
                 
+            } else if (hasPermission.needsGesture) {
+                // Permission needs to be requested with user gesture (Windows requirement)
+                folderHandle = handle;
+                folderButton.textContent = `📁 ${handle.name} (Click to grant access)`;
+                folderButton.classList.add('needs-permission');
+                
+                // Create a one-time click handler to request permission
+                const requestPermissionHandler = async () => {
+                    debugLog('Requesting folder permission...', 'info');
+                    const permissionResult = await folderPersistence.requestFolderPermission(handle);
+                    
+                    if (permissionResult.granted) {
+                        folderButton.textContent = `📁 ${handle.name} (Click to reload)`;
+                        folderButton.classList.remove('needs-permission');
+                        folderButton.classList.add('active');
+                        folderButton.removeEventListener('click', requestPermissionHandler);
+                        
+                        updateFolderButtons();
+                        
+                        debugLog('Permission granted! Loading music...', 'success');
+                        await loadFromFolder();
+                    } else {
+                        debugLog('Permission denied', 'error');
+                        folderPersistence.deleteFolderHandle();
+                        folderButton.textContent = '📁 Select Music Folder';
+                        folderButton.classList.remove('needs-permission');
+                        folderButton.removeEventListener('click', requestPermissionHandler);
+                    }
+                };
+                
+                folderButton.addEventListener('click', requestPermissionHandler);
+                playlistStatus.textContent = `Click "📁 ${handle.name}" to grant access and load music`;
             } else {
                 debugLog('Permission denied for saved folder', 'warning');
                 folderPersistence.deleteFolderHandle();

@@ -632,30 +632,39 @@ async _executeTransaction(storeNames, mode, operation) {
                     await iterator.next();
                     return { granted: true, requested: false };
                 } catch (accessErr) {
-                    console.warn('⚠️ Permission reported as granted but access failed, re-requesting...');
-                    currentPermission = 'prompt';
+                    console.warn('⚠️ Permission reported as granted but access failed');
+                    // Don't try to re-request automatically - needs user gesture on Windows
+                    return { granted: false, needsGesture: true };
                 }
             }
             
             if (autoRequest && (currentPermission === 'prompt' || currentPermission === 'denied')) {
                 // On Windows, a user gesture is REQUIRED to trigger requestPermission.
                 // This must be called from a click handler or similar.
-                try {
-                    const requestedPermission = await handle.requestPermission(options);
-                    return { 
-                        granted: requestedPermission === 'granted', 
-                        requested: true 
-                    };
-                } catch (reqErr) {
-                    console.error('❌ requestPermission failed:', reqErr);
-                    return { granted: false, error: reqErr.message, needsGesture: true };
-                }
+                // Don't auto-request on page load - it will fail silently on Windows
+                console.log('ℹ️ Permission needed - user must click to grant access');
+                return { granted: false, needsGesture: true };
             }
             
             return { granted: currentPermission === 'granted', requested: false };
         } catch (err) {
             console.error('❌ Permission check failed:', err);
             return { granted: false, error: err.message };
+        }
+    }
+
+    async requestFolderPermission(handle) {
+        const options = { mode: 'read' };
+        
+        try {
+            const requestedPermission = await handle.requestPermission(options);
+            return { 
+                granted: requestedPermission === 'granted', 
+                requested: true 
+            };
+        } catch (reqErr) {
+            console.error('❌ requestPermission failed:', reqErr);
+            return { granted: false, error: reqErr.message, needsGesture: true };
         }
     }
 
