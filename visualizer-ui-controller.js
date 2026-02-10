@@ -422,25 +422,28 @@ enterFullscreen() {
     // ============================================
     
     cycleMode() {
-        const modes = ['bars', 'circular', 'waveform', 'particles'];
-        const currentMode = this.manager.vizMode;
+        const modes = ['bars', 'circular', 'waveform', 'particles', 'nebula', '3d-waveform'];
+        const currentMode = this.manager.getMode();
         const currentIndex = modes.indexOf(currentMode);
-        const nextMode = modes[(currentIndex + 1) % modes.length];
+        const nextIndex = (currentIndex + 1) % modes.length;
+        const nextMode = modes[nextIndex];
         
-        this.manager.setVizMode(nextMode);
+        this.manager.setMode(nextMode);
         
-        const modeNames = {
-            'bars': 'Bars',
-            'circular': 'Circular',
-            'waveform': 'Waveform',
-            'particles': 'Particles'
-        };
-        
+        // Update button text
         if (this.elements.modeBtn) {
-            this.elements.modeBtn.textContent = `🎨 Mode: ${modeNames[nextMode]}`;
+            const modeNames = {
+                'bars': '📊 Bars',
+                'circular': '⭕ Circular',
+                'waveform': '〰️ Waveform',
+                'particles': '✨ Particles',
+                'nebula': '🌌 Nebula',
+                '3d-waveform': '🎭 3D Wave'
+            };
+            this.elements.modeBtn.textContent = modeNames[nextMode] || nextMode;
         }
         
-        this.debugLog(`Visualizer mode: ${modeNames[nextMode]}`, 'info');
+        this.debugLog(`Visualizer mode: ${nextMode}`, 'info');
     }
     
     // ============================================
