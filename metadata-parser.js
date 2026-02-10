@@ -462,67 +462,92 @@ class MetadataParser {
      * "Almost Redundant" Robust Text Decoder
      * Handles BOM, encoding detection, Mojibake, and non-printable characters
      */
+    /**
+     * "Extreme" Robust Text Decoder
+     * Eliminates garbage (), boxes, and Mojibake using multi-pass decoding
+     * and aggressive visual filtering.
+     */
     decodeText(view, start, length, encoding) {
         if (length <= 0) return '';
         
         // Use a slice to avoid view issues with shared buffers
         const bytes = new Uint8Array(view.buffer.slice(start, start + length));
         
-        // Helper: Clean and trim the decoded string
-        const sanitize = (str) => {
+        /**
+         * The "Redundant Sanitizer"
+         * Removes: Nulls, Control Chars, Private Use Areas, and Invalid Glyphs
+         */
+        const extremeSanitize = (str) => {
             if (!str) return '';
             return str
-                .replace(/\0/g, '') // Remove null bytes
-                .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '') // Remove non-printable ASCII
+                .replace(/\0/g, '') // Remove nulls
+                .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '') // Remove ASCII control chars
+                .replace(/[\uFFFD\u0001-\u001F\u007F-\u009F]/g, '') // Remove  and extended control chars
+                .replace(/[\uE000-\uF8FF]|\uD83C[\uDFFB-\uDFFF]|\uD83D[\uDC00-\uDDFF]/g, '') // Remove Private Use & certain boxes
                 .trim();
         };
 
-        // 1. Check for Byte Order Mark (BOM) - overrides provided encoding
+        // 1. BOM Detection (Highest Priority)
         if (bytes.length >= 2) {
-            if (bytes[0] === 0xFF && bytes[1] === 0xFE) return sanitize(new TextDecoder('utf-16le').decode(bytes.slice(2)));
-            if (bytes[0] === 0xFE && bytes[1] === 0xFF) return sanitize(new TextDecoder('utf-16be').decode(bytes.slice(2)));
+            if (bytes[0] === 0xFF && bytes[1] === 0xFE) return extremeSanitize(new TextDecoder('utf-16le').decode(bytes.slice(2)));
+            if (bytes[0] === 0xFE && bytes[1] === 0xFF) return extremeSanitize(new TextDecoder('utf-16be').decode(bytes.slice(2)));
         }
         if (bytes.length >= 3 && bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) {
-            return sanitize(new TextDecoder('utf-8').decode(bytes.slice(3)));
+            return extremeSanitize(new TextDecoder('utf-8').decode(bytes.slice(3)));
         }
 
-        // 2. Multi-stage Decoding Strategy
-        const decoders = [];
-        
-        // Prioritize based on the provided encoding hint
-        if (encoding === 1 || encoding === undefined) decoders.push('utf-8', 'iso-8859-1', 'windows-1252');
-        else if (encoding === 2) decoders.push('utf-16le', 'utf-8', 'iso-8859-1');
-        else if (encoding === 3) decoders.push('utf-16be', 'utf-8', 'iso-8859-1');
-        else if (encoding === 0) decoders.push('iso-8859-1', 'windows-1252', 'utf-8');
-        else decoders.push('utf-8', 'iso-8859-1', 'windows-1252', 'utf-16le', 'utf-16be');
+        // 2. Heuristic Encoding Detection (CJK & Common Local Encodings)
+        const isLikelyUTF16 = () => {
+            if (bytes.length < 4) return false;
+            let nullCount = 0;
+            for (let i = 0; i < bytes.length; i++) if (bytes[i] === 0) nullCount++;
+            return nullCount > bytes.length * 0.2; // High null density suggests UTF-16
+        };
 
+        const decoders = [];
+        if (isLikelyUTF16()) {
+            decoders.push('utf-16le', 'utf-16be');
+        }
+
+        // Map ID3 encoding hints to decoder priorities
+        const hintMap = {
+            0: ['iso-8859-1', 'windows-1252', 'gbk', 'shift-jis', 'euc-kr', 'utf-8'], // "ISO" often means local
+            1: ['utf-16le', 'utf-16be', 'utf-8'],
+            2: ['utf-16le', 'utf-16be', 'utf-8'],
+            3: ['utf-8', 'iso-8859-1', 'windows-1252']
+        };
+
+        const priorities = hintMap[encoding] || ['utf-8', 'iso-8859-1', 'windows-1252', 'gbk', 'shift-jis', 'euc-kr'];
+        decoders.push(...priorities);
+
+        // 3. Multi-Pass Decoding with "Mojibake Repair"
         for (const enc of decoders) {
             try {
                 const decoder = new TextDecoder(enc, { fatal: true });
-                const result = decoder.decode(bytes);
+                let result = decoder.decode(bytes);
                 
-                // Heuristic: If we have too many replacement characters, it's likely wrong
-                if ((result.match(/\uFFFD/g) || []).length > result.length * 0.1) continue;
-                
-                // Heuristic: Check for common Mojibake patterns (e.g., "Ã©" instead of "é")
-                // If it looks like Mojibake, try to re-decode the result as UTF-8
-                if (enc === 'iso-8859-1' || enc === 'windows-1252') {
+                // Repair Step: If decoded as ISO but looks like UTF-8 Mojibake
+                if ((enc === 'iso-8859-1' || enc === 'windows-1252') && /[\xC0-\xDF][\x80-\xBF]/.test(result)) {
                     try {
-                        const mojibakeCheck = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-                        if (mojibakeCheck.length < result.length) return sanitize(mojibakeCheck);
+                        const repair = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+                        if (repair.length < result.length) result = repair;
                     } catch(e) {}
                 }
 
-                return sanitize(result);
-            } catch (e) {
-                continue; // Try next decoder
-            }
+                const sanitized = extremeSanitize(result);
+                // If the result is substantial and clean, we've found it
+                if (sanitized.length > 0 && !sanitized.includes('')) return sanitized;
+            } catch (e) { continue; }
         }
 
-        // 3. Ultimate Fallback: Strip everything but printable ASCII
-        return sanitize(Array.from(bytes)
-            .map(b => (b >= 32 && b <= 126) ? String.fromCharCode(b) : '')
-            .join(''));
+        // 4. Ultimate Recovery: Manual character mapping
+        let recovery = '';
+        for (let i = 0; i < bytes.length; i++) {
+            const b = bytes[i];
+            if (b >= 32 && b <= 126) recovery += String.fromCharCode(b);
+            else if (b >= 160) recovery += String.fromCharCode(b); // Extended Latin
+        }
+        return extremeSanitize(recovery);
     }
 
     decodeUTF16LE(view, start, length) {
@@ -582,14 +607,23 @@ class MetadataParser {
     }
 
     normalizeMetadata(metadata, file) {
-        const title = (metadata.title || file.name.split('.').slice(0, -1).join('.')).trim();
+        // Final "Nuclear" Sanitization Pass
+        const nuclearClean = (str) => {
+            if (!str) return '';
+            return str
+                .replace(/[\uFFFD\u0000-\u001F\u007F-\u009F\uFEFF]/g, '') // Remove , Control, BOM
+                .replace(/[\uE000-\uF8FF]/g, '') // Remove Private Use
+                .trim();
+        };
+
+        const title = nuclearClean(metadata.title || file.name.split('.').slice(0, -1).join('.'));
         return {
             title: title || 'Unknown Track',
-            artist: (metadata.artist || 'Unknown Artist').trim(),
-            album: (metadata.album || 'Unknown Album').trim(),
+            artist: nuclearClean(metadata.artist || 'Unknown Artist'),
+            album: nuclearClean(metadata.album || 'Unknown Album'),
             year: metadata.year || null,
             image: metadata.image || null,
-            genre: metadata.genre || null,
+            genre: nuclearClean(metadata.genre || null),
             track: metadata.track || null,
             hasMetadata: !!(metadata.title || metadata.artist || metadata.album)
         };
