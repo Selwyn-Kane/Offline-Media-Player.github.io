@@ -422,7 +422,7 @@ enterFullscreen() {
     // ============================================
     
     cycleMode() {
-        const modes = ['bars', 'circular', 'waveform', 'particles', 'nebula', '3dwave'];
+        const modes = ['bars', 'circular', 'waveform', 'particles', 'nebula', '3dwave', 'spectrum', 'radial', 'energyflow'];
         const currentMode = this.manager.vizMode;
         const currentIndex = modes.indexOf(currentMode);
         const nextMode = modes[(currentIndex + 1) % modes.length];
@@ -433,7 +433,12 @@ enterFullscreen() {
             'bars': 'Bars',
             'circular': 'Circular',
             'waveform': 'Waveform',
-            'particles': 'Particles'
+            'particles': 'Particles',
+            'nebula': 'Nebula',
+            '3dwave': '3D Wave',
+            'spectrum': 'Spectrum',
+            'radial': 'Radial',
+            'energyflow': 'Energy Flow'
         };
         
         if (this.elements.modeBtn) {
