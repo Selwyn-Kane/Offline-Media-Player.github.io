@@ -108,12 +108,13 @@ class CustomBackgroundManager {
             const reader = new FileReader();
             
             reader.onload = (e) => {
-                const dataURL = e.target.result;
-                this.applyBackground(dataURL);
-                this.saveBackground(dataURL);
-                this.showPreview(dataURL);
-                this.debugLog('Custom background loaded from file', 'success');
-            };
+    const dataURL = e.target.result;
+    this.applyBackground(dataURL);
+    this.saveBackground(dataURL);
+    this.showPreview(dataURL);
+    this.debugLog('Custom background loaded from file', 'success');
+    this.hideModal();
+};
             
             reader.readAsDataURL(file);
         } catch (err) {
@@ -126,12 +127,13 @@ class CustomBackgroundManager {
             // Test if image loads
             const img = new Image();
             
-            img.onload = () => {
-                this.applyBackground(url);
-                this.saveBackground(url);
-                this.showPreview(url);
-                this.debugLog('Custom background loaded from URL', 'success');
-            };
+           img.onload = () => {
+    this.applyBackground(url);
+    this.saveBackground(url);
+    this.showPreview(url);
+    this.debugLog('Custom background loaded from URL', 'success');
+    this.hideModal();
+};
             
             img.onerror = () => {
                 alert('Failed to load image from URL. Please check the URL and try again.');
@@ -145,19 +147,27 @@ class CustomBackgroundManager {
     }
     
     applyBackground(imageData) {
-        document.body.style.backgroundImage = `url(${imageData})`;
-        document.body.classList.add('custom-bg');
-        this.currentBackground = imageData;
-    }
+    document.body.style.backgroundImage = `url(${imageData})`;
+    document.body.style.backgroundSize = 'cover';
+    document.body.style.backgroundPosition = 'center';
+    document.body.style.backgroundRepeat = 'no-repeat';
+    document.body.style.backgroundAttachment = 'fixed';
+    document.body.classList.add('custom-bg');
+    this.currentBackground = imageData;
+}
     
     resetBackground() {
-        document.body.style.backgroundImage = '';
-        document.body.classList.remove('custom-bg');
-        this.currentBackground = null;
-        localStorage.removeItem('customBackground');
-        this.hidePreview();
-        this.debugLog('Background reset to default', 'info');
-    }
+    document.body.style.backgroundImage = '';
+    document.body.style.backgroundSize = '';
+    document.body.style.backgroundPosition = '';
+    document.body.style.backgroundRepeat = '';
+    document.body.style.backgroundAttachment = '';
+    document.body.classList.remove('custom-bg');
+    this.currentBackground = null;
+    localStorage.removeItem('customBackground');
+    this.hidePreview();
+    this.debugLog('Background reset to default', 'info');
+}
     
     saveBackground(imageData) {
         try {

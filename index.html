@@ -68,37 +68,9 @@
             </div>
             
             <div class="sidebar-item">
-                <button id="pip-toggle" class="sidebar-btn" data-icon="📺" data-label="Float">
-                    <span class="sidebar-icon">📺</span>
-                    <span class="sidebar-label">Float</span>
-                </button>
-            </div>
-            
-            <div class="sidebar-item">
-                <button id="sticky-toggle" class="sidebar-btn" data-icon="📌" data-label="Sticky">
-                    <span class="sidebar-icon">📌</span>
-                    <span class="sidebar-label">Sticky Off</span>
-                </button>
-            </div>
-            
-            <div class="sidebar-item">
                 <button id="fullscreen-lyrics-toggle" class="sidebar-btn" data-icon="🎤" data-label="Lyrics">
                     <span class="sidebar-icon">🎤</span>
                     <span class="sidebar-label">Fullscreen Lyrics</span>
-                </button>
-            </div>
-
-            <div class="sidebar-item">
-                <label class="toggle-container">
-                    <input type="checkbox" id="auto-lyrics-toggle">
-                    <span class="sidebar-label">Auto-Fetch Lyrics</span>
-                </label>
-            </div>
-            
-            <div class="sidebar-item">
-                <button id="fullscreen-viz-toggle" class="sidebar-btn" data-icon="🌌" data-label="Visualizer">
-                    <span class="sidebar-icon">🌌</span>
-                    <span class="sidebar-label">Fullscreen Visualizer</span>
                 </button>
             </div>
 
@@ -124,11 +96,11 @@
 </div>
             
             <div class="sidebar-item">
-                <button id="auto-lyrics-btn" class="sidebar-btn" data-icon="🎤" data-label="Auto Lyrics">
-                    <span class="sidebar-icon">🎤</span>
-                    <span class="sidebar-label">Auto-Fetch Lyrics</span>
-                </button>
-            </div>
+    <button id="auto-lyrics-btn" class="sidebar-btn" data-icon="🎤" data-label="Auto Lyrics">
+        <span class="sidebar-icon">🎤</span>
+        <span class="sidebar-label">Auto-Fetch Lyrics</span>
+    </button>
+</div>
             
             <div class="sidebar-item">
                 <button id="deep-analysis-btn" class="sidebar-btn" data-icon="🔍" data-label="Analysis">
@@ -144,7 +116,6 @@
         <h1>🎵 Ultimate Local Music Player</h1>
         
         <div id="metadata-container">
-            <button class="sticky-close" style="display: none;">✕</button>
             <div id="cover-art-container">
                 <img id="cover-art" alt="Album Art">
                 <div id="cover-placeholder">🎵</div>
@@ -241,11 +212,8 @@
             <div class="lyric-line">Lyrics will appear here when a track is loaded.</div>
         </div>
         
-        <!-- Visualizer -->
-        <div id="player-wrapper">
-            <canvas id="visualizer"></canvas>
-            <video id="audio-player" preload="metadata" crossorigin="anonymous"></video>
-        </div>
+      <!-- Audio Player (moved out to eliminate gap) -->
+<video id="audio-player" preload="metadata" crossorigin="anonymous" style="display: none;"></video>
         
         <!-- Playlist -->
         <div id="playlist-container">
@@ -262,29 +230,7 @@
         
         <div id="debug-panel"></div>
     </div>
-    
-    <!-- Hidden Elements -->
-    <video id="pip-video" muted playsinline style="display:none;"></video>
-    
-    <!-- Fullscreen Visualizer -->
-    <div id="fullscreen-visualizer" class="fullscreen-viz-hidden">
-        <div class="fullscreen-viz-controls">
-            <button id="viz-mode-btn" class="viz-control-btn">🎨 Mode: Bars</button>
-            <button id="viz-prev-btn" class="viz-control-btn">◀ Previous</button>
-            <button id="viz-play-pause-btn" class="viz-control-btn">⏸ Pause</button>
-            <button id="viz-next-btn" class="viz-control-btn">▶ Next</button>
-            <button id="viz-close-btn" class="viz-control-btn">✕ Close (ESC)</button>
-        </div>
-        <canvas id="fullscreen-viz-canvas"></canvas>
-        <div class="fullscreen-viz-info">
-            <div class="fullscreen-viz-title">No track loaded</div>
-            <div class="fullscreen-viz-artist">--</div>
-            <div class="fullscreen-viz-time">
-                <span id="viz-current-time">0:00</span> / <span id="viz-duration">0:00</span>
-            </div>
-        </div>
-    </div>
-    
+
     <!-- Fullscreen Lyrics -->
     <div id="fullscreen-lyrics" class="fullscreen-lyrics-hidden">
         <canvas id="fullscreen-lyrics-viz-canvas"></canvas>
@@ -423,7 +369,6 @@
     <script src="image-optimizer.js"></script>
     <script src="audio-buffer-manager.js"></script>
     <script src="audio-presets-manager.js"></script>
-    <script src="visualizer-manager.js"></script>
     <script src="metadata-parser.js"></script>
     <script src="vtt-parser.js"></script>
     <script src="error-recovery.js"></script>
@@ -436,10 +381,10 @@
     <script src="custom-metadata-store.js"></script>
     <script src="folder-persistence.js"></script>
     <script src="volume-control.js"></script>
+    <script src="audio-pipeline.js"></script>
     <script src="lyrics-manager.js"></script>
     <script src="file-loading-manager.js"></script>
     <script src="playlist-renderer.js"></script>
-    <script src="visualizer-ui-controller.js"></script>
     <script src="script.js"></script>
     <script src="mobile.js"></script>
     <script src="sw-init.js"></script>
@@ -478,31 +423,6 @@
         });
     });
     
-    // Play/pause button functionality
-    const playPauseButton = document.getElementById('play-pause-button');
-    const audioPlayer = document.getElementById('audio-player');
-    
-    if (playPauseButton && audioPlayer) {
-        playPauseButton.addEventListener('click', () => {
-            if (audioPlayer.paused) {
-                audioPlayer.play();
-            } else {
-                audioPlayer.pause();
-            }
-        });
-        
-        audioPlayer.addEventListener('play', () => {
-            playPauseButton.querySelector('.control-icon').textContent = '⏸️';
-        });
-        
-        audioPlayer.addEventListener('pause', () => {
-            playPauseButton.querySelector('.control-icon').textContent = '▶️';
-        });
-        
-        audioPlayer.addEventListener('ended', () => {
-            playPauseButton.querySelector('.control-icon').textContent = '▶️';
-        });
-    }
-    </script>
+        </script>
 </body>
 </html>
